@@ -1,0 +1,474 @@
+---
+title: "TP1 - Vuelos"
+author: "Grupo N"
+date: "10/14/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Cargamos librerías
+
+```{r}
+require(tidyverse)
+require(geosphere)
+require(rvest)
+require(dplyr)
+```
+
+# Cargamos los datos
+```{r}
+#datos <- read.csv('aterrizajes-y-despegues-registrados-por-eana-2020.csv', sep=";", header=T)
+datos <- read.csv('202109-informe-ministerio.csv', sep=";", header=T, encoding = "UTF-8")
+
+# De factor a caracter
+datos <- datos %>%
+  mutate(across(everything(), as.character)) 
+
+datos
+```
+
+Visualizamos los datos sin datos faltantes y solo del tipo de nuestro interés 
+```{r}
+datos <- datos %>%
+  filter(Aeronave != 0,
+         Aeropuerto != Origen...Destino,
+         Aerolinea.Nombre != "0",
+         Clasificación.Vuelo == "Dom")
+datos
+```
+
+Vemos que los datos ordenados por fecha y hora, comienzan con arribos de vuelos que despegaron en el día anterior al primero de la tabla, por lo que los borramos.
+```{r}
+datos <- datos %>%
+  slice_tail(n = nrow(datos) - 4)
+datos
+```
+
+# Distancia recorrida
+
+Vamos a necesitar las coordenadas de cada aeropuerto.
+
+Observación: Cada vuelo aparece dos veces en la base de datos, una como despegue, y otro como atterizaje.
+Dado que contienen la misma información (para este ejercicio), podemos quedarnos solo con los despegues.
+
+Vamos a necesitar unir la tabla de aeropuertos con sus coordenadas a la tabla de vuelos, para poder calcular la distancia entre los mismos.
+
+```{r}
+aereo <- read.csv('Tabla aeropuertos.csv', sep=",", header=T, encoding = "UTF-8")
+
+# De factor a caracter
+aereo <- aereo %>%
+  mutate(across(everything(), as.character))
+
+aereo
+```
+
+Agregamos columnas de coordenadas y filtramos columnas que no necesitamos
+
+```{r}
+datos_distancia <- datos %>% 
+  # Agregamos coordenadas de aeropuerto en columna Aeropuerto
+  left_join(aereo, by = c( "Aeropuerto" = "ana" ), suffix = c("", ".extra")) %>% 
+  rename(latitud_o=x, longitud_o=y) %>% 
+  # Agregamos coordenadas de aeropuerto en columna Origen...Destino
+  left_join(aereo, by = c( "Origen...Destino" = "ana" ), suffix = c("", ".extra")) %>%
+  rename(latitud_d=x, longitud_d=y) %>% 
+  # Filtramos columnas no relevantes o repetidas
+  select(-one_of(c("Calidad.dato", "ose", "iko", "ita", "thr", "fuc",
+                   "ose.extra", "iko.extra", "ita.extra", "thr.extra", "fuc.extra",
+                   "id.extra", "cpr.extra", "pais.extra", "nam.extra", "fna.extra", "nom_ciudad.extra")))
+
+datos_distancia
+```
+
+Calculamos distancia para cada fila
+```{r}
+datos_distancia <- datos_distancia %>%
+  rowwise() %>% 
+  mutate(Distancia.recorrida.km = distHaversine(p1 = (1/1000) * c(as.numeric(latitud_o), as.numeric(longitud_o)),
+                                                p2 = (1/1000) * c(as.numeric(latitud_d), as.numeric(longitud_d))))
+datos_distancia
+```
+
+# Velocidad Promedio
+
+Para calcular la velocidad necesitamos el tiempo de vuelo, y por lo tanto, la hora de despegue y la de aterrizaje.
+
+Primero, visualizamos los datos de una manera ordenada aproximada
+
+```{r}
+datos.velocidades  <- datos_distancia %>%
+  mutate(Fecha.Hora = strptime(x = paste(Fecha, Hora.UTC),
+                               format = "%d/%m/%Y %H:%M"), .before=Fecha) %>% 
+  arrange(Aeronave, Fecha.Hora)
+
+datos.velocidades 
+```
+
+
+# Algoritmo Iterativo (lento)
+
+Elegimos ignorar este algoritmo pues no solo es lento al ejecutarse, sino que luego de ejecutarlo, RStudio ejecuta todo con pausas y delays, lo que vuelve muy poco dinámico el análisis de datos.
+```{r}
+# Para mostrar progreso del algoritmo
+#install.packages("svMisc")
+#require(svMisc)
+
+# Como funcion para evitar su ejecución
+iterativo <- function(){
+  HORAS.MAX <- 10
+  
+  DEBUGGING <- FALSE
+  NUM.DATA <- as.integer(nrow(datos.velocidades) / 10)
+  set.seed(42)
+  
+  if (!DEBUGGING){
+    num.filas <- nrow(datos.velocidades)
+  } else {
+    num.filas <- NUM.DATA
+    datos.velocidades <- data.frame(datos.velocidades) %>% slice_sample(n=NUM.DATA)
+  }
+  
+  datos.velocidades$"Velocidad"  <- rep(NA, num.filas)
+  datos.velocidades$"Tiempo.vuelo" <- rep(NA, num.filas)
+  
+  for(i in 1:(num.filas-1))
+  {
+    progress(i, max.value = (num.filas-1), )
+    seguir.buscando <- TRUE
+    j <- i + 1
+    # Solo busco match para cada despegue
+    if(datos.velocidades[[i, "Tipo.de.Movimiento"]] == "Despegue")
+    {
+      while (seguir.buscando && j <= nrow(datos.velocidades))
+      {
+        # Calculo tiempo de vuelo entre cada 2 filas
+        # No hay vuelos mayores a 10 horas, dejo de buscar para esta fila i,
+        # la dejo como NA para filtrar luego, y paso al siguiente despegue
+        tiempo.vuelo <- as.numeric(datos.velocidades[[j, "Fecha.Hora"]] - datos.velocidades[[i, "Fecha.Hora"]], units="hours")
+        
+        # Como los tengo ordenados por fecha, y luego por modelo de avión, puedo
+        # salir del loop interno al ver un aterrizaje con otro modelo de avión
+        # (pues todos los siguientes son tambien distintos al de origen).
+        distinta.aeronave <- datos.velocidades[[j, "Aeronave"]] != datos.velocidades[[i, "Aeronave"]]
+  
+        if(tiempo.vuelo > HORAS.MAX | distinta.aeronave){ 
+          # Dejo de buscar match, y depegue en fila i queda incompleto (y descartado)
+          seguir.buscando <- FALSE
+        }
+        else
+        {
+          es.match <- is.na(datos.velocidades[[j, "Velocidad"]] &&
+             datos.velocidades[[j, "Tipo.de.Movimiento"]] == "Aterrizaje" &&
+             datos.velocidades[[j, "Origen...Destino"]] == datos.velocidades[[i, "Aeropuerto"]] &&
+             datos.velocidades[[j, "Aeropuerto"]] == datos.velocidades[[i, "Origen...Destino"]])
+          if(es.match)
+          {
+            # Coincidencia de 2 filas, calculo velocidad y paso a siguiente despegue
+            velocidad.media <- datos.velocidades[[i, "Distancia.recorrida.km"]] / tiempo.vuelo
+            
+            datos.velocidades$Velocidad[i] <- velocidad.media
+            datos.velocidades$Velocidad[j] <- velocidad.media
+            datos.velocidades$Tiempo.vuelo[i] <- tiempo.vuelo
+            datos.velocidades$Tiempo.vuelo[j] <- tiempo.vuelo
+            
+            seguir.buscando <- FALSE
+          }
+          # Paso a siguiente aterrizaje
+          j <- j + 1
+        }
+      }
+    }
+  }
+}
+```
+
+# Algoritmo Martin
+```{r}
+# dividimos en despegues y aterrizajes
+despegues   <- datos.velocidades[datos.velocidades$Tipo.de.Movimiento == 'Despegue',]
+aterrizajes <- datos.velocidades[datos.velocidades$Tipo.de.Movimiento == 'Aterrizaje',]
+```
+
+```{r}
+# hacemos un match
+datos.matched <- left_join(despegues, aterrizajes,
+                           by= c("Aeropuerto" = "Origen...Destino",
+                                 "Origen...Destino" = "Aeropuerto",
+                                 "Aerolinea.Nombre" = "Aerolinea.Nombre",
+                                 "Aeronave" = "Aeronave")) %>% 
+    mutate(Tiempo.vuelo = as.numeric(Fecha.Hora.y - Fecha.Hora.x, units='hours')) %>%
+    group_by(Aeropuerto, Fecha.Hora.x, Aeronave) %>% 
+    filter(Tiempo.vuelo > 0) %>%
+    filter(Tiempo.vuelo < 5) %>% 
+    filter(Tiempo.vuelo == min(Tiempo.vuelo)) %>% 
+    ungroup()
+```
+
+```{r}
+datos.velocidades <- datos.matched %>%
+  mutate(Velocidad = Distancia.recorrida.km.x / Tiempo.vuelo)
+
+datos.velocidades
+```
+
+# Verificamos datos de velocidades calculados
+```{r}
+datos.velocidades %>% 
+    filter(Aeropuerto == 'AER') %>%
+    group_by(Origen...Destino) %>% 
+    mutate(count=n()) %>%
+    filter(count>300) %>%
+    ggplot(aes(x = Tiempo.vuelo)) +
+      geom_histogram(fill = "steelblue", colour = "black") +
+      facet_grid(Origen...Destino ~ .)
+```
+Observamos que el tiempo medio del histograma de Usuaia y el de El Calafate está por encima de los otros, lo cual se condice con la distancia mayor que se debe recorrer
+
+
+### Cantidad de viajes por aerolinea
+
+Analizamos la cantidad de viajes por aerolínea.
+
+```{r}
+frec.aerolinea <- datos.velocidades %>% 
+  group_by(Aerolinea.Nombre) %>%
+  summarise(Frecuencia=n()) %>% 
+  arrange(desc(Frecuencia))
+
+frec.aerolinea
+```
+```{r}
+barplot(frec.aerolinea$Frecuencia, names.arg=frec.aerolinea$Aerolinea.Nombre, las=2, cex.names = 0.5, col="steelblue")
+```
+Como se ve en el barplot, Aerolineas Argentinas tiene la mayor cantidad de vuelos realizados, lo cual es esperable dado que estamos visualizando vuelos nacionales.
+
+### Modelo de avión más utilizado
+
+De entre todos los modelos de avión, vemos si hay alguno más frecuente que otros.
+
+```{r}
+frec.aeronave <- datos.velocidades %>% 
+  group_by(Aeronave) %>%
+  summarise(Frecuencia = n(), Velocidad.mediana = median(Velocidad)) %>% 
+  arrange(desc(Frecuencia))
+
+frec.aeronave
+```
+```{r}
+plot(log(frec.aeronave$Frecuencia), frec.aeronave$Velocidad.mediana, col="steelblue", pch=20,
+     xlab="Frecuencia (log)", ylab="Velocidad mediana", main="Frecuencia vs Velocidad de Modelo")
+points(log(frec.aeronave$Frecuencia[frec.aeronave$Aeronave == "EMB-ERJ190100IGW"]), frec.aeronave$Velocidad.mediana[frec.aeronave$Aeronave == "EMB-ERJ190100IGW"], col="red", pch=20, cex=1.5)
+```
+
+Vemos que el avión más frecuente (destacado en rojo), está cerca de los más rápidos. Podemos ubicarlo en un boxplot de frecuencias para comparar mejor sobre el resto de los modelos de avión:
+
+```{r}
+boxplot(frec.aeronave$Velocidad.mediana)
+abline(h=frec.aeronave$Velocidad.mediana[frec.aeronave$Aeronave == "EMB-ERJ190100IGW"], col="red")
+```
+
+Con esto observamos que existen modelos de avión con velocidades superiores al del más usado, lo cual indicaría que existe otra variable que incentiva su uso (por ejemplo: capacidad, mantenimiento, costo relativo, etc).
+
+Visualizando la frecuencia de uso de cada modelo, podemos ver como el modelo más usado está muy por encima de los demás, y para cada modelo de avión, se observa un decaimiento similar a una exponencial:
+```{r}
+barplot(frec.aeronave$Frecuencia, names.arg=frec.aeronave$Aeronave, las=2, cex.names = 0.5, col="steelblue")
+```
+Esto se condice con el hecho de que la aerolínea con más vuelos es Aerolineas Argentina, la cual es la única que usa el modelo de avión EMB-ERJ190100IGW en la gran mayoría de sus vuelos, como podemos ver con el siguiente código:
+
+```{r}
+frec.aeronave.AA <- datos.velocidades %>% 
+  filter(Aerolinea.Nombre == "AEROLINEAS ARGENTINAS SA") %>% 
+  group_by(Aeronave) %>%
+  summarise(Frecuencia=n()) %>% 
+  arrange(desc(Frecuencia))
+
+frec.aeronave.AA
+```
+
+```{r}
+barplot(frec.aeronave.AA$Frecuencia, names.arg=frec.aeronave.AA$Aeronave, las=2, cex.names = 0.5, col="steelblue")
+```
+Dado que a pesar de que el modelo EMB-ERJ190100IGW no es el más veloz, es el predominamente más usado por sobre los otros modelos de la empresa, lo cual es un indicio de que probablemente haya un motivo por el cual es utilizado.
+
+Podemos ver la proporción relativa de este modelo sobre el total de vuelos:
+```{r}
+frec.modelo <- frec.aeronave.AA[frec.aeronave.AA$Aeronave=="EMB-ERJ190100IGW", "Frecuencia"]
+frec.total <- sum(frec.aeronave.AA$Frecuencia)
+
+prop.modelo <- frec.modelo / frec.total
+prop.modelo
+```
+Vemos que esa proporción es del 45%.
+
+A pesar de que es el modelo más usado, más de la mitad de los vuelos son realizados con otros modelos, algo que nos parece anti-intuitivo viendo solo el barplot de frecuencias.
+
+Otro enfoque que podemos tomar, es comparar todos los modelos de todas las aerolíneas con una matriz de correlaciones:
+```{r}
+datos.velocidades %>% 
+  select(Aeronave, Aerolinea.Nombre) %>% 
+  #group_by(Aeronave, Aerolinea.Nombre) %>% 
+  group_by(Aerolinea.Nombre) %>% 
+  # La frecuencia se calcula sobre las Aeronaves y las Aerolineas
+  add_count(Aeronave) %>% 
+  rename(Frecuencia=n) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  arrange(Aeronave) %>%
+  ggplot(aes(x=Aeronave, y=Aerolinea.Nombre, fill=Frecuencia)) + 
+      geom_tile(color = "white")+
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+          size = 5, hjust = 1))
+```
+A partir de esta matriz, podemos ver que Aerolineas Argentinas tiene la mayor diversidad de modelos de aeronaves (23), mientras las otras aerolinas tienen entre 1 y 4 modelos distintos.
+
+Además, los modelos usados por Aerolineas Argentinas no suelen ser usados por otras aerolineas.
+
+
+```{r}
+datos.velocidades %>% 
+  filter(Aerolinea.Nombre == "AEROLINEAS ARGENTINAS SA") %>% 
+  select(Aeronave, Origen...Destino) %>% 
+  # La frecuencia se calcula sobre las Aeronaves y los Destinos
+  group_by(Origen...Destino) %>% 
+  add_count(Aeronave) %>% 
+  rename(Frecuencia=n) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  # Cambiando frecuencia en arrange por origen...destino cambian las frecuencias
+  # Qué pasa con el color gris?
+  #arrange(Origen...Destino) %>%
+  ggplot(aes(x=Aeronave, y=Origen...Destino, fill=Frecuencia)) + 
+      geom_tile(color = "white") +
+      theme_minimal() +
+      scale_fill_gradient(low = "blue", high = "red",  limit = c(1,2923), space = "Lab") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+          size = 7, hjust = 1),
+          axis.text.y = element_text(size = 7))
+```
+Observamos que el modelo de avión más usado (EMB-ERJ190100IGW) hace viajes a todos los destinos.
+
+Tambien vemos que los modelos BO-73785F y BO-73786J solo viajan a Salta.
+
+El único modelo que va a Viedma es EMB-ERJ190100IGW
+
+
+Analizamos ahora a qué destinos hace vuelos cada aerolinea
+```{r}
+datos.velocidades %>% 
+  #filter(Aerolinea.Nombre == "AEROLINEAS ARGENTINAS SA") %>% 
+  select(Aerolinea.Nombre, Origen...Destino) %>% 
+  group_by(Aerolinea.Nombre) %>% 
+  # La frecuencia se calcula sobre las Aeronaves y los Destinos
+  #group_by(Origen...Destino) %>% 
+  add_count(Origen...Destino) %>% 
+  rename(Frecuencia=n) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  arrange(Frecuencia) %>%
+  ggplot(aes(x=Aerolinea.Nombre, y=Origen...Destino, fill=Frecuencia)) + 
+      geom_tile(color = "white") +
+      theme_minimal() +
+      scale_fill_gradient(low = "blue", high = "red",  limit = c(1,6500), space = "Lab") +
+      theme(axis.text.x = element_text(angle = 75, vjust = 1, 
+          size = 5, hjust = 1),
+          axis.text.y = element_text(size = 5))
+```
+Algunas particularidades que podemos observar:
+
+Hay varias aerolineas que tienen muchos destinos (columnas casi completas) y otras que llegan a tener muy pocas (solo 4 o 5).
+
+Viendo los agujeros de estas columnas, Baires FLY tiene 6, American JET tiene 7, y Aerolíneas Argentinas tiene 8, lo que nos muestra que son las que más destinos tienen.
+
+Aerolíneas con único destino:
+
+* Escuela Federeal de Aviación Policial solo tiene como destino Paraná (PAR).
+* Escuela de Vuelo BA Flight solo tiene como destino San Fernando (FDO).
+
+Suponemos que esto sucede pues son destino relativamente cercanos para realizar las prácticas de vuelo.
+
+Destinos con únicas aerolíneas:
+
+* Aeropuerto de Villa Reynolds (RYD) al cual solo vuela Aerorutas SA
+* Aeropuerto de Morón (MOR) al cual solo vuela American Jet SA
+* Aeropuerto Internacional Comodoro Ricardo Salomon (MLG) (Malargüe, Mendoza) al cual solo vuela Baires Fly SA
+* Aeropuerto de Concordia Comodoro Juan José Pierrestegui (DIA) al cual solo vuela Baires Fly SA
+
+```{r}
+vel.aeronave <- datos.velocidades %>% 
+  group_by(Aeronave) %>%
+  mutate(Vel.mediana = median(Velocidad)) %>% 
+  arrange(Vel.mediana)
+
+vel.aeronave
+```
+
+# Corrientes de chorro
+
+Analizamos la velocidad de los vuelos de Ezeiza a Bariloche y viceversa para estimar el efecto de las corrientes de chorro
+
+```{r}
+datos.EZE.BAR <- datos.velocidades %>%
+  filter(Aeropuerto == "EZE", Origen...Destino=="BAR") %>% 
+  select(Velocidad) %>% 
+  # Filtramos outliers
+  filter(Velocidad < median(Velocidad) + median(Velocidad) / 4 &
+         Velocidad > median(Velocidad) - median(Velocidad) / 4  )
+
+datos.BAR.EZE <- datos.velocidades %>%
+  filter(Aeropuerto == "BAR", Origen...Destino=="EZE") %>% 
+  select(Velocidad) %>% 
+  # Filtramos outliers
+  filter(Velocidad < median(Velocidad) + median(Velocidad) / 4 &
+         Velocidad > median(Velocidad) - median(Velocidad) / 4  )
+
+
+n.dif <- length(datos.EZE.BAR$Velocidad) - length(datos.BAR.EZE$Velocidad)
+
+tabla.horizontal <- data.frame(Velocidad.ida=datos.EZE.BAR$Velocidad,
+                               Velocidad.vuelta=c(datos.BAR.EZE$Velocidad, rep(NA, n.dif)))
+```
+
+```{r}
+tabla.horizontal %>%
+  gather() %>% 
+  ggplot(aes(x=value, fill=key)) +
+    geom_histogram(position="identity") +
+    ggtitle("Velocidades Ezeiza-Bariloche\nIda vs Vuelta") +
+    xlab("Velocidad (km/h)") +
+    ylab("Frecuencia relativa")
+```
+Podemos ver como hay una gran diferencia entre la velocidad de ida y la velocidad de vuelta entre los distintos viajes de Ezeiza Bariloche, con los de vuelta notablemente más rápidos.
+
+Esto nos ayuda a pensar el efecto de las corrientes de chorro afectando el recorrido de los vuelos (si la corriente va a favor o en contra del desplazamiento, la velocidad se verá afectada).
+
+# Personas por hora
+
+```{r}
+datos.velocidades %>%
+  mutate(Solo.Hora = as.integer(substr(Hora.UTC.x, 1, 2)), .before=Hora.UTC.x) %>% 
+  mutate(Pasajeros.x = as.integer(Pasajeros.x)) %>% 
+  select(Solo.Hora, Pasajeros.x) %>% 
+  filter(Pasajeros.x > 0) %>% 
+  ggplot(aes(x=Pasajeros.x, y=Solo.Hora)) +
+  geom_point() +
+  scale_y_continuous(breaks=0:23) + 
+  geom_line(aes(x=50, col="red")) +
+  geom_line(aes(x=100, col="red"))
+```
+Podemos observar que hay muy pocos pasajeros viajando entre las 4 y 6 de la mañana.
+
+Tambien vemos que la mayoría de los vuelos tienen menos de 100 pasajeros, y que hay un pico de más de 100 a las 13, 18 y 19hs, por lo que creemos que son los horarios preferidos por los viajeros.
+

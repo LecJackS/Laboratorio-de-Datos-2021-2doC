@@ -1,0 +1,216 @@
+---
+title: "Reexplorando PROPERATI"
+author: "Ariel Salgado"
+date: "20 de Julio de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+# Este notebook
+
+En este notebook el objetivo es que ustedes puedan emplear lo visto en el notebook _Nociones básicas de estadística descriptiva_ para caracterizar y repensar el dataset de propiedades de `ar_properties.csv`. 
+
+Proponemos una serie de preguntas _guía_ a responder usando las herramientas presentadas en el notebook de estadística descriptiva.  En todas la preguntas propuestas, el objetivo es que identifiquen alguna medida o visualización que les ayude a responder la pregunta _conceptual_ realizada. Esto significa que todo gráfico o número debería ir acompañado de una interpretación del significado que ustedes asignen al mismo.
+
+# El dataset
+
+El dataset que usaremos pueden encontrarlo en la página de la materia (`ar_properties.csv`). En caso de que existan dudas sobre como cargarlo, el notebook de estadística descriptiva (y los videos asociados) describen como hacerlo.
+
+
+# Preguntas
+
+## Primera parte
+
+Construya un subset de los datos totales filtrando propiedades de Capital Federal, tipo de operación Venta y moneda en dólares.
+
+
+* ¿Es el precio por metro cuadrado igual en toda el dataset? ¿Cómo varía?
+_Cree precio por metro cuadrado (precio por m2). Caracterice esta variable usando las herramientas de estadística descriptiva vistas._
+
+
+* ¿Cuales propiedades son caras, promedio o baratas?
+_Construya una partición que separe el precio por metro cuadrado en tres categorías._
+
+
+* ¿Cómo cambia el precio por cantidad de habitaciones (_rooms_) en el dataset? ¿Cambia al considerar distintos tipos de propiedad?¿Y distintos barrios?
+
+
+* ¿Qué considera que describe mejor el precio de una propiedad, su número de habitaciones (_rooms_) o su superficie cubierta?
+
+
+* ¿Cómo cambia la superficie cubierta por número de habitaciones (_rooms_) en el dataset?¿Cambia al considerar distintos tipos de propiedad?¿Y distintos barrios?
+_Caracterice metro cuadrado por habitación. Caracterice esta variable usando las herramientas de estadística descriptiva vistas._
+
+
+* ¿Cuál es la relación entre la superficie total y la superficie cubierta, al considerar distintos tipos de propiedades?
+
+
+* ¿Cómo se relaciona la cantidad de habitaciones (_rooms_) con la cantidad de baños (_bathrooms_)?¿Cómo cambia según el tipo de propiedad?¿Y según el barrio?
+
+
+* ¿Cuánto tiempo duran los anuncios en departamentos en CABA? ¿Nota algo extraño?
+_Para calcular la cantidad de días entre dos fechas, puede restarlas si están en formato `Date`._
+
+
+* ¿Cómo cambia la cantidad de anuncios publicados en los distintos días de la semana?
+_La función `weekdays` permite identificar a qué día corresponde el anuncio publicado._
+
+
+## Segunda parte
+Amplíe el dataset para considerar todas las propiedades de argentina, con tipo de operación Venta o Alquiler (y cualquier moneda).
+
+
+```{r}
+# leo el archivo ar_properties 
+library(readr)
+datos1a  <- read_csv("ar_properties.csv") # Acá completen con su propio PATH al archivo
+datos1a
+names(datos1a)
+```
+
+```{r}
+# filtros
+filtro.pais <- is.element(datos1a$l1,"Argentina")
+#filtro.region <- is.element(datos1a$l2,"Capital Federal")
+#filtro.moneda <- is.element(datos1a$currency,"USD")
+#filtro.prop <- is.element(datos1a$property_type,"Departamento")
+#filtro.oper <- is.element(datos1a$operation_type,"Venta")
+
+# Remuevo datos faltantes
+filtro.lat <- !is.na(datos1a$lat) # sin datos faltantes
+filtro.lon <- !is.na(datos1a$lon) # sin datos faltantes
+filtro.price <- !is.na(datos1a$price) & datos1a$price > 0 # sin datos faltantes
+filtro.sup <- !is.na(datos1a$surface_covered) & datos1a$surface_covered > 0 # sin datos faltantes
+filtro.barrio <- !is.na(datos1a$l3) # sin datos faltantes
+
+filtro.nan <- filtro.lat & filtro.lon & filtro.price & filtro.sup & filtro.barrio
+
+filtro.oper <- !is.element(datos1a$operation_type, "Alquiler temporal")
+
+# condicion multiple
+quedan <- (filtro.pais & filtro.nan & filtro.oper) # vector logico con TRUEs en los registros seleccionados
+
+# nueva base, con solo 5 variables: lat,lon,barrio, precio y superficie
+datos2 <- datos1a[quedan, ] # nueva base
+datos2
+# definicion de variables para trabajar
+
+lat <- datos2$lat
+lon <- datos2$lon
+
+barrio <- datos2$l3
+
+sup <- datos2$surface_covered
+
+precio <- datos2$price
+
+print(sup[sup < 0])
+print(precio[precio < 0])
+
+pm2 <- precio/sup # nueva variable de interes
+
+# descripcion de la variable pm2
+summary(pm2) 
+hist(pm2)
+hist(pm2[pm2<8000],50)
+```
+
+
+```{r}
+
+```
+
+
+* ¿Cuál es la relación entre región (`l2`) y tipo de operación (Venta o Alquiler)? ¿Cambia con el tipo de propiedad?
+
+```{r}
+
+#proporcion <- datos2$price[datos2$operation_type=="Venta"] / datos2$price[datos2$operation_type=="Alquiler"]
+
+#tabla.prov <- table(datos2$l2[order(datos2$l2)], datos2$operation_type[order(datos2$l2)])
+tabla.prov <- table(datos2$l2, datos2$operation_type)#, proporcion)
+tabla.prov
+uni.prov <- unique(datos1a$l2)
+#ventas <- datos2$l2[datos2$operation_type == "Venta"]
+#alquileres <- datos2$l2[datos2$operation_type == "Alquiler"]
+num.ventas <- datos2$operation_type == "Venta"
+#num.alquileres <- 
+#mosaicplot(datos2$operation_type~datos2$l2)
+
+barplot(t(tabla.prov), las=2, beside=T, cex.names = 0.6, cex.axis = 0.6)
+```
+
+```{r}
+
+venta.mask <- datos2$operation_type == "Venta"
+alquiler.mask <- datos2$operation_type == "Alquiler"
+
+tabla.prov.venta <- table(datos2$l2[venta.mask], datos2$price[venta.mask])#, proporcion)
+tabla.prov.alquiler <- table(datos2$l2[alquiler.mask], datos2$price[alquiler.mask])
+tabla.prov
+uni.prov <- unique(datos1a$l2)
+#ventas <- datos2$l2[datos2$operation_type == "Venta"]
+#alquileres <- datos2$l2[datos2$operation_type == "Alquiler"]
+precios.venta <- datos2$price[venta.mask]
+precios.alquiler <- datos2$price[alquiler.mask]
+
+#num.alquileres <- 
+#mosaicplot(datos2$operation_type~datos2$l2)
+
+boxplot(datos2$price[venta.mask] ~ datos2$l2[venta.mask], las=2, beside=T, cex.names = 0.6, cex.axis = 0.6,outline=F)
+boxplot(datos2$price[alquiler.mask] ~ datos2$l2[alquiler.mask], las=2, beside=T, cex.names = 0.6, cex.axis = 0.6,outline=F, c='green')
+abline(y=mean(precios.venta))
+abline(y=2000)
+```
+
+
+* ¿Qué diferencia existe en el tipo de operación (Venta o Alquiler) entre Catamarca y La Rioja? ¿Y entre Chaco y Santa Cruz?
+
+```{r}
+tabla.prov[c("Catamarca", "La Rioja"),]
+tabla.prov[1,]
+```
+
+
+* ¿Cómo describiría la relación entre la variable `l2` (región) y `l3` (barrio)? ¿Están igual de particionadas todas las regiones?
+_Construya una lista con tantos elementos cómo regiones (categorías de `l2`) y en cada elemento incluye las subregiones asociadas (categorías de `l3`). Construya un vector representando la cantidad de subregiones para cada región y resuma este vector._
+
+```{r}
+regiones <- datos2$l2
+subregiones <- datos2$l3
+
+regiones.unicas <- unique(regiones)
+
+por.region <- vector("list", length(regiones.unicas))
+num.subregiones <- vector("list", length(regiones.unicas))
+
+i <- 1
+for(region in regiones.unicas){
+  por.region[[i]] <- unique(subregiones[regiones==region])
+  num.subregiones[[i]] <- length(por.region[[i]])
+  i <- i + 1
+}
+
+# Las ordeno
+num.subregiones <- num.subregiones[order(unlist(num.subregiones))]
+regiones.unicas <- regiones.unicas[order(unlist(num.subregiones))]
+
+df <- data.frame(unlist(num.subregiones))
+row.names(df) <- regiones.unicas
+#num.subregiones
+#por.region
+
+barplot(t(as.matrix(df)), beside=T, las=2, cex.names = 0.6, cex.axis = 0.6, c='limegreen')
+```
+
+
+
+* Caracterice el _fondo_ de las propiedades (superficie total - superficie cubierta) para distintas regiones del país. ¿En qué lugar los _fondos_ son más grandes? ¿Cambia según el tipo de propiedad?
+

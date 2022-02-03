@@ -1,0 +1,81 @@
+---
+title: "Reexplorando PROPERATI"
+author: "Ariel Salgado"
+date: "20 de Julio de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+# Este notebook
+
+En este notebook el objetivo es que ustedes puedan emplear lo visto en el notebook _Nociones básicas de estadística descriptiva_ para caracterizar y repensar el dataset de propiedades de `ar_properties.csv`. 
+
+Proponemos una serie de preguntas _guía_ a responder usando las herramientas presentadas en el notebook de estadística descriptiva.  En todas la preguntas propuestas, el objetivo es que identifiquen alguna medida o visualización que les ayude a responder la pregunta _conceptual_ realizada. Esto significa que todo gráfico o número debería ir acompañado de una interpretación del significado que ustedes asignen al mismo.
+
+# El dataset
+
+El dataset que usaremos pueden encontrarlo en la página de la materia (`ar_properties.csv`). En caso de que existan dudas sobre como cargarlo, el notebook de estadística descriptiva (y los videos asociados) describen como hacerlo.
+
+
+# Preguntas
+
+## Primera parte
+
+Construya un subset de los datos totales filtrando propiedades de Capital Federal, tipo de operación Venta y moneda en dólares.
+
+
+* ¿Es el precio por metro cuadrado igual en toda el dataset? ¿Cómo varía?
+_Cree precio por metro cuadrado (precio por m2). Caracterice esta variable usando las herramientas de estadística descriptiva vistas._
+
+
+* ¿Cuales propiedades son caras, promedio o baratas?
+_Construya una partición que separe el precio por metro cuadrado en tres categorías._
+
+
+* ¿Cómo cambia el precio por cantidad de habitaciones (_rooms_) en el dataset? ¿Cambia al considerar distintos tipos de propiedad?¿Y distintos barrios?
+
+
+* ¿Qué considera que describe mejor el precio de una propiedad, su número de habitaciones (_rooms_) o su superficie cubierta?
+
+
+* ¿Cómo cambia la superficie cubierta por número de habitaciones (_rooms_) en el dataset?¿Cambia al considerar distintos tipos de propiedad?¿Y distintos barrios?
+_Caracterice metro cuadrado por habitación. Caracterice esta variable usando las herramientas de estadística descriptiva vistas._
+
+
+* ¿Cuál es la relación entre la superficie total y la superficie cubierta, al considerar distintos tipos de propiedades?
+
+
+* ¿Cómo se relaciona la cantidad de habitaciones (_rooms_) con la cantidad de baños (_bathrooms_)?¿Cómo cambia según el tipo de propiedad?¿Y según el barrio?
+
+
+* ¿Cuánto tiempo duran los anuncios en departamentos en CABA? ¿Nota algo extraño?
+_Para calcular la cantidad de días entre dos fechas, puede restarlas si están en formato `Date`._
+
+
+* ¿Cómo cambia la cantidad de anuncios publicados en los distintos días de la semana?
+_La función `weekdays` permite identificar a qué día corresponde el anuncio publicado._
+
+
+## Segunda parte
+Amplíe el dataset para considerar todas las propiedades de argentina, con tipo de operación Venta o Alquiler (y cualquier moneda).
+
+
+* ¿Cuál es la relación entre región (`l2`) y tipo de operación (Venta o Alquiler)? ¿Cambia con el tipo de propiedad?
+
+
+* ¿Qué diferencia existe en el tipo de operación (Venta o Alquiler) entre Catamarca y La Rioja? ¿Y entre Chaco y Santa Cruz?
+
+
+* ¿Cómo describiría la relación entre la variable `l2` (región) y `l3` (barrio)? ¿Están igual de particionadas todas las regiones?
+_Construya una lista con tantos elementos cómo regiones (categorías de `l2`) y en cada elemento incluye las subregiones asociadas (categorías de `l3`). Construya un vector representando la cantidad de subregiones para cada región y resuma este vector._
+
+
+* Caracterice el _fondo_ de las propiedades (superficie total - superficie cubierta) para distintas regiones del país. ¿En qué lugar los _fondos_ son más grandes? ¿Cambia según el tipo de propiedad?
+

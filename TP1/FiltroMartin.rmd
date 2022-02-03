@@ -1,0 +1,61 @@
+---
+    title: "R Notebook"
+output:
+    html_document:
+    df_print: paged
+---
+    
+    ```{r}
+library(tidyverse)
+```
+
+```{r}
+
+df = read_csv2('202109-informe-ministerio.csv')
+colnames(df) <- str_replace(tolower(colnames(df)), "[ /]+", "_")
+df$fecha_hora = strptime(paste(df$fecha, df$hora_utc), format = "%d/%m/%Y %H:%M:%S")
+
+# Algunos filtros
+df = df[df$aerolinea_nombre != 0,]
+df = df[df$clasificación_vuelo == 'Dom',]
+```
+
+```{r}
+# dividimos en despegues y aterrizajes
+despegues = df[df$`tipo_de movimiento` == 'Despegue',]
+aterrizajes = df[df$`tipo_de movimiento` == 'Aterrizaje',]
+```
+
+```{r}
+# hacemos un match
+matched = left_join(despegues, aterrizajes, by= c("aeropuerto" = "origen_destino", "origen_destino" = "aeropuerto", "aerolinea_nombre" = "aerolinea_nombre", "aeronave" = "aeronave")) %>% 
+    mutate(tdif = as.numeric(fecha_hora.y - fecha_hora.x, units='hours')) %>%
+    group_by(aeropuerto, fecha_hora.x, aeronave) %>% 
+    filter(tdif > 0) %>%
+    filter(tdif < 5) %>% 
+    filter(tdif == min(tdif))
+```
+
+
+```{r}
+matched %>% group_by(aeropuerto, origen_destino) %>%  
+    summarize(m=median(tdif), n=n(), iqr = IQR(tdif)) %>% arrange(desc(n))
+```
+
+```{r Fig1, echo=TRUE, fig.height=20, fig.width=7}
+
+matched %>% 
+    filter(aeropuerto == 'AER') %>%
+    group_by(origen_destino) %>% 
+    mutate(count=n()) %>%
+    filter(count>300) %>%
+    ggplot(aes(x = tdif)) +
+    geom_histogram(fill = "white", colour = "black") +
+    facet_grid(origen_destino ~ .)
+```
+
+
+```{r}
+hist(datos.velocidades$Tiempo.vuelo[datos.velocidades$Tiempo.vuelo < 4])
+```
+

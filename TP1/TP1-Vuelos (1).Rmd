@@ -1,0 +1,156 @@
+---
+title: "TP1 - Vuelos"
+author: "Grupo N"
+date: "10/14/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+require(tidyverse)
+require(geosphere)
+require(rvest)
+require(dplyr)
+```
+
+```{r}
+#datos <- read.csv('aterrizajes-y-despegues-registrados-por-eana-2020.csv', sep=";", header=T)
+datos <- read.csv('202109-informe-ministerio.csv', sep=";", header=T, encoding = "UTF-8")
+
+# De factor a caracter
+datos <- datos %>%
+  mutate(across(everything(), as.character)) 
+
+datos
+```
+Queremos (para conectar filas del mismo vuelo):
+
+* Aeropuerto <--> Origen...Destino (mismos dos, dados vuelta)
+* Mismos pasajeros
+* Aeronave
+* Aerolinea.Nombre
+* Tipo.de.Movimiento opuesto
+
+# datos$Origen...Destino == datos$Aeropuerto &&
+# datos$Pasajeros == datos$Pasajeros &&
+# datos$Tipo.de.Movimiento != datos$Tipo.de.Movimiento
+    
+Columnas Fecha y hora a formato fecha permite operar
+* Tiempo max: 10hs
+
+Visualizamos los datos sin datos faltantes y solo del tipo de nuestro interés 
+```{r}
+datos <- datos %>%
+  filter(Aeronave != 0,
+         Aeropuerto != Origen...Destino,
+         Aerolinea.Nombre != "0")
+         #Clasificación.Vuelo != "Inter") %>%
+
+
+```
+
+# Distancia recorrida
+
+Vamos a necesitar las coordenadas de cada aeropuerto.
+
+Observación: Cada vuelo aparece dos veces en la base de datos, una como despegue, y otro como atterizaje.
+Dado que contienen la misma información (para este ejercicio), podemos quedarnos solo con los despegues.
+
+```{r}
+datos_distancia <- datos %>%
+    filter(Tipo.de.Movimiento == "Aterrizaje")
+
+datos_distancia
+```
+
+Vamos a necesitar unir la tabla de aeropuertos con sus coordenadas a la tabla de vuelos, para poder calcular la distancia entre los mismos.
+
+```{r}
+aereo <- read.csv('Tabla aeropuertos.csv', sep=",", header=T, encoding = "UTF-8")
+
+# De factor a caracter
+aereo <- aereo %>%
+  mutate(across(everything(), as.character))
+
+aereo
+```
+
+Agregamos columnas de coordenadas y filtramos columnas que no necesitamos
+
+```{r}
+datos_distancia <- datos_distancia %>% 
+  left_join(aereo, by = c( "Aeropuerto" = "ana" )) %>% 
+  rename(x_1=x, y_1=y) %>% 
+  left_join(aereo, by = c( "Origen...Destino" = "ana" )) %>%
+  rename(x_2=x, y_2=y) %>% 
+  select(-one_of(c("Calidad.dato", "ose.x", "iko.x", "ita.x", "thr.x", "ose.y", "iko.y", "ita.y", "thr.y")))
+
+datos_distancia
+```
+
+
+
+```{r}
+datos_distancia %>%
+  rowwise() %>% 
+  mutate(Distancia.recorrida = distHaversine(p1=c(as.numeric(x_1), as.numeric(y_1)),
+                                             p2=c(as.numeric(x_2), as.numeric(y_2))))
+
+datos_distancia
+```
+
+# Velocidad Promedio
+
+Para calcular la velocidad necesitamos el tiempo de vuelo, y por lo tanto, la hora de despegue y la de aterrizaje.
+
+Primero, visualizamos los datos de una manera ordenada aproximada
+```{r}
+datos_velocidad <- datos %>% arrange(Fecha, Aerolinea.Nombre, Aeronave, Clase.de.Vuelo..todos.los.vuelos., Clasificación.Vuelo, Pasajeros, Hora.UTC)
+
+datos_velocidad
+```
+
+```{r}
+n_col <- length(colnames(datos_velocidad))
+vuelos_conectados <- data.frame(matrix(ncol=n_col, nrow=0))
+colnames(vuelos_conectados) <- colnames(datos_velocidad)
+
+n_row <- nrow(datos_velocidad)
+i <- 1
+while(i < n_row){
+  fila_1 <- datos_velocidad[i,]
+  fila_2 <- datos_velocidad[i+1,]
+  
+  if(fila_1$Aeropuerto == fila_2$Aeropuerto &
+     fila_1$Origen...Destino == fila_2$Origen...destino &
+     fila_1$Tipo.de.Movimiento != fila_2$Tipo.de.Movimiento)
+  {
+    # Lo consideramos el mismo vuelo
+    
+    i <- i + 2
+  }
+  else
+  {
+    # No son el mismo vuelo, descarto el primero
+    i <- i + 1
+  }
+    
+
+  
+}
+datos_velocidad 
+```
+

@@ -1,0 +1,394 @@
+---
+title: "Un pequeño vistazo a **GRAFOS**"
+author: "Ariel Salgado"
+date: "Septiembre 07 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+# Los grafos
+
+## DISCLAIMER
+Esta materia _no es_ un curso de grafos per se. El universo del estudio de grafos es enorme en sí mismo (como pasa con muchos temas en esta materia). Por nuestra parte nos va a interesar como herramienta para visualizar y medir relaciones entre los datos. En este sentido, podemos pensar al grafo como una forma de representar datos. Dependiendo de la estrategia de representación, los grafos pueden corresponderse con listas (semiestructurados), tablas (estructurados) o pares de tablas.
+
+## ¿Qué es un grafo?
+
+Un grafo (también _red_) es una estructura _MUY_ general en la cual podemos representar relaciones entre objetos. En general lo representamos a través de dos conjuntos: uno de vértices (o nodos) $V$ y uno de ejes (o conexiones) $E$. Los vértices representan los objetos que nos interesa estudiar (pueden ser personas, animales, productos o lo que se les ocurra) y los ejes sus relaciones (retweets o espacios laborales compartidos para personas, cadenas tróficas entre animales, ingredientes compartidos entre productos, por nombrar algunas cosas). Lo poderoso de la representación mediante grafos es que permite visualizar la estructura que da soporte a los objetos, y la existencia de una batería enorme de métodos para caracterizar esta estructura. Por ejemplo, hay herramientas para identificar la importancia de cada vértice, los grupos más fuertemente conectados en la red, conexiones que faltan, resistencia de la red a fallos y muchas otras cosas.
+
+La estructura de la red permite incluir más información que sólo los vértices y los ejes. Esto se suele incluir como atributos de los nodos y los ejes (por ejemplo, podríamos querer incluir la edad de las personas como atributo de los vértices, o la cantidad de retweets de una persona a otra como atributo de los ejes).
+
+En nuestro caso, vamos a hacer un análisis exploratorio sobre una red para ver las posibilidades de visualización y caracterización de las correlaciones que implica la estructura de la red sobre sus elementos. 
+
+## El dataset: tragos del API
+
+Para construir nuestro grafo vamos a usar los datos del API de tragos que vimos en clases pasadas. Por esto, nuestro primer paso va a ser descargar todos los tragos y sus ingredientes. Vamos a descargar iterativamente la información de todos los tragos con letras en `letters`:
+
+```{r}
+require(jsonlite)
+bebidas = NULL
+url_base = 'http://www.thecocktaildb.com/api/json/v1/1/search.php?f='
+letra = 'a'
+for(letra in letters){
+  print(paste('Letra:',letra))
+  dwld = fromJSON(paste(url_base,letra,sep=''))$drinks
+  bebidas = rbind(bebidas,dwld)
+  print(paste('Había',nrow(dwld),'bebidas'))
+}
+bebidas
+nrow(bebidas)
+```
+
+Con esto logramos descargar la información de todos nuestros tragos disponibles. El problema es que si se fijan, la información de los ingredientes de las bebidas no está presente de forma clara. Por ejemplo, la primer bebida incluye 4 ingredientes, pero tenemos 15 columnas dedicadas a ingredientes.
+
+```{r}
+bebidas[1,grep('Ingredient',colnames(bebidas))]
+sum(!is.na(bebidas[1,grep('Ingredient',colnames(bebidas))]))
+length(grep('Ingredient',colnames(bebidas)))
+```
+Esto es algo que ocurre normalmente cuando convertimos a un formato tabular información de conexiones: dado que no todos los tragos tienen la misma cantidad de conexiones (no tienen la misma cantidad de ingredientes), nuestro dataset tiene mucho espacio vacío dentro.
+
+¿Cómo podemos llevar esta información a un formato más cómodo? Les dejo dos ideas:
+
+* **Construir un listado de ejes**: El listado de ejes es un formato muy común para guardar información de redes, especialmente cuando todos los vertices tienen al menos una conexión. No debe confundirse con una _lista_ como objeto de `R`. La representación es muy similar a un CSV: en cada fila incorporamos la información que describe un eje: su _cola_ y su _cabeza_. Mirando la primer fila del dataset que descargamos, podríamos visualizarla así:
+
+```{r echo=FALSE}
+cat(paste0(paste(bebidas$strDrink[1],bebidas[1,18:21],sep=','),collapse='\n'))
+```
+A la izquierda siempre tenemos un vertice "bebida" y a la derecha un vértice "ingrediente".
+
+* **Construir una matriz**: otra representación muy habitual para grafos es la de _matriz de adyacencia_. En ese caso, construimos una matriz $X$ tal que $X_{i,j}=1$ si hay una conexión entre los vértices $i$ y $j$ y $0$ si no. Esta representación es muy habitual como input de funciones debido a que es muy independiente del lenguaje particular que se use. En nuestro caso particular, si tenemos $N_T$ tragos y $N_I$ ingredientes, $X \in R^{N_T \times N_I}$, y es una matriz rala, llena de ceros. Únicamente tendría 1s en las posiciones $ij$ que conecten un trago (ingrediente) $i$ con un ingrediente (trago) $j$. Noten que en nuestro caso particular, no habría conexiones directas entre tragos o entre ingredientes.
+
+Mientras que el listado de ejes _comprime_ la información, sólo indicando las conexiones que están presentes, mientras que la matriz de adyacencia la _expande_ indicando qué ocurre para cualquier combinación posible de vértices.
+
+Volviendo a nuestro caso particular, veamos como llevarlo a un listado de ejes. Como ejercicio, vamos a hacer usando las herramientas de `tidyverse`.
+
+```{r}
+require(tidyverse)
+```
+
+Vamos a llevar el dataset original a una lista de ejes:
+```{r}
+print(paste('Empezamos con',nrow(bebidas),'filas'))
+
+beb_tidy = bebidas %>%  # Al dataframe de bebidas
+  select(strDrink,strIngredient1:strIngredient15) %>% # Le seleccionamos los nombres de bebidas y sus ingredientes
+  group_by(strDrink) %>% #Avisamos que queremos agrupar las operaciones por bebida
+  unite('strIngredients',strIngredient1:strIngredient15,na.rm=TRUE,sep=',') #Unimos las columnas de ingredientes pegandolas con comas
+print(paste('Ahora tenemos',nrow(beb_tidy),'filas y', ncol(beb_tidy),'columnas'))
+```
+
+
+```{r}
+beb_ejes = beb_tidy %>% # Al nuevo dataframe
+  separate_rows(strIngredients,sep=',') # Lo separamos en filas distintas por cada ingrediente
+
+print(paste('Obtenemos finalmente',nrow(beb_ejes),'ejes'))
+```
+
+
+El único cuidado que no tuvimos hasta acá y nos puede traer problemas es que haya nombres repetidos entre bebidas y ingredientes:
+
+
+```{r}
+intersect(beb_ejes$strDrink,beb_ejes$strIngredients)
+```
+
+
+Para sacarnos ese problema de encima, ponemos en mayúscula los nombres de las bebidas y en minúscula la de los ingredientes:
+
+
+```{r}
+beb_ejes = beb_ejes %>% # Al dataset de ejes
+  mutate(strDrink = toupper(strDrink),strIngredients=tolower(strIngredients))  # Cambiamos la columna strDrink a mayúscula y strIngredients a minúscula
+intersect(beb_ejes$strDrink,beb_ejes$strIngredients)
+```
+
+
+Con esto construido, podemos responder algunas preguntas muy sencillas, aún sin pensar todavía en la red. Por ejemplo, ¿cuál es la bebida que más ingredientes usa? ¿cuál menos? ¿cuántos ingredientes usan cada bebida?
+
+```{r}
+beb_ejes %>%
+  count(strDrink,name='nIngredients') %>% # Contamos cuantas veces aparece cada bebida, ese es su total de ingredientes
+  arrange(desc(nIngredients)) # Lo ordenamos en orden descendente
+
+beb_ejes %>% # Lo mismo pero en orden ascendente
+  count(strDrink,name='nIngredients') %>%
+  arrange(nIngredients)
+
+beb_ejes %>%
+  count(strDrink,name='nIngredients') %>% # Contamos ingredientes
+  ungroup() %>% #Desagrupamos para hacer sumarios
+  summarise(media=mean(nIngredients),stdev=sd(nIngredients),min=min(nIngredients),max=max(nIngredients)) # Calculamos algunas medidas
+
+beb_ejes %>% # Hacemos un histograma de la cantidad de apariciones de cada ingrediente
+  count(strDrink,name='nIngredients') %>%
+  ggplot(mapping=aes(x=nIngredients)) +
+  geom_histogram(binwidth = 1,fill='white',col='black') + 
+  geom_boxplot(width=10,color='blue',lwd=1.5)
+
+```
+
+La bebida que más ingredientes usa es **Egg Nog #4** _(¿ponche de huevo?)_ con 11 ingredientes, y la que menos se disputa entre muchos candidatos, con 2 ingredientes. En promedio las bebidas tienen 4 ingredientes, con un desvío de 1.5 ingredientes (o sea que podemos resumir que el grueso de los datos tienen entre 2.5 y 5.5 ingredientes).
+
+
+#### Ejercicio:
+
+Repitan este análisis pero en vez de mirar desde el punto de vista del trago, mirenlo desde los ingredientes. ¿Hay alguna coincidencia entre los valores que obtienen?
+
+```{r}
+
+```
+
+
+### Construyendo el grafo
+
+Habiendo explorado brevemente lo que nos dice la lista de ejes por sí sola, avancemos con la vizualización de la estructura que resulta. Para esto vamos a aprovechar dos paquetes buenísimos de `R` para trabajar con redes: `igraph` y `tidygraph`. `igraph` tiene la mayor parte de lo que cualquier análisis de redes puede necesitar, mientras que `tidygraph` nos permite aprovechar `igraph` y `tidyverse` a la vez.
+
+```{r}
+# Si aún no los instalaron:
+# install.packages('igraph')
+# install.packages('tidygraph')
+require(igraph)
+require(tidygraph)
+
+```
+Ahora vamos a armar nuestro objeto _grafo_ usando `tidygraph` e `igraph`.
+
+```{r}
+g =  beb_ejes %>%
+  graph_from_data_frame(directed = FALSE) %>% # Esta función toma el listado y lo convierte en un objeto grafo
+  as_tbl_graph() # Este lo mueve a formato "tidy"
+g
+```
+
+Fijense que llevar `beb_ejes` a un `tbl_graph` obtenemos un objeto que tiene los dos tipos de información que mencionamos antes: los nodos o vértices ( _nodes_ ) y los ejes ( _edges_ ) en forma de una matriz. Fijense que obtenemos varias medidas resumen desde el punto de partida: tenemos 747 vértices, y 1698 ejes.
+
+Vamos a agregar un poquito extra de información en nuestro grafo, para que incluya el hecho de que nuestros vértices son de distinto tipo:
+
+```{r}
+g = g %>% 
+  activate(nodes) %>% # Así le decimos que opere sobre el dataframe de nodos
+  mutate(type=ifelse(is.element(name,beb_ejes$strDrink),'Drink','Ingredient')) # Agregamos el tipo de nodo que es
+g
+```
+```{r}
+## Podemos chusmear el resultado acá
+g %>% activate(nodes) %>% as.data.frame() # Para visualizarlo entero, lo movemos a dataframe
+g %>% activate(edges) %>% as.data.frame()
+
+```
+
+Fijense que luego de esta operación, `tidygraph` ya detecto que nuestro grafo es `bipartite` (bipartito). Esto significa que todas las conexiones ocurren entre vértices de distinto tipo (en este caso, `Drink` y `Ingredient`).
+
+Hagamos una primer visualización del grafo
+
+```{r}
+# install.packages('ggraph') # Si aún no lo tienen instalado.
+require(ggraph)
+
+g %>% 
+  ggraph() + # Pasamos el grafo a ggraph (ggplot para grafos)
+  geom_edge_link(edge_width=.1,alpha=0.5) + # Indicamos grosor de los ejes y transparencia
+  geom_node_point(mapping = aes(color=type,shape=type),size = 1) + # Pedimos color y forma basandose en el tipo de nodo.
+  theme_graph()
+
+# Si graficamos "arriba" un tipo de nodo y "abajo" al otro:
+g %>% activate(nodes) %>% 
+  mutate(type=type=='Drink') %>% # La función de layout necesita que sea un vector lógico el "type"
+  ggraph(layout='igraph',algorithm='bipartite') +
+  geom_edge_link(edge_width=.1,alpha=0.3) +
+  geom_node_point(mapping = aes(color=type,shape=type),size = 1) +
+  theme_graph()
+```
+
+Observen como la forma en la que acomodamos los vértices (el _layout_ del grafo) nos permite observar estructura en los datos: al acomodar los distintos tipos de vértices (`Ingredient` arriba y `Drink`) abajo, la gráfica nos sugiere que  no todas las bebidas se conectan por igual a todos los ingredientes, y que no todos los ingredientes se vinculan por igual a todas las bebidas: hay "grupos" que están más conectados que otros. 
+
+
+#### Ejercicio
+Usen la documentación de `igraph` sobre layouts para encontrar los diferentes layouts
+
+```{r}
+?ggraph # Lean al final de todo en Details
+?layout # Lean al final de todo en See Also
+```
+Cambiando el argumento de la función de `ggraph` exploren distintos layouts ¿alguno le ayuda a encontrar estructura en los datos? ¿qué observa?
+
+
+## Distribución de grado
+
+Previamente calculamos la cantidad de ingregientes que cada bebida lleva. Si lo pensamos en términos de la red, esto equivale a hablar de la cantidad de _conexiones_ que tiene cada bebida. A esta magnitud (la cantidad de conexiones que tiene un vértice) se la denomina _grado_ de un vértice, y es la medida de _centralidad_ en una red más común: nos dice de una forma muy simple cuan conectado está un vértice al resto. Una vez definida la red, es muy fácil calcular el grado de cada vértice usando las funciones de `igraph`:
+
+```{r}
+g %>% degree(v='EGG NOG #4') # podemos pedir de un nodo en particular
+# Todas estas funciones también las pueden usar como 
+degree(g,v='EGG NOG #4')
+```
+Podemos replicar el gráfico que armamos antes contando ejes a mano:
+
+```{r}
+grados = g %>% degree(v=V(g)$type=='Drink') #Así le pedimos el grado de TODAS las BEBIDAS
+ggplot(data=data.frame(grados),mapping=aes(x=grados)) + geom_histogram(binwidth = 1) # Pedimos ancho de bin =1 para que nos muestre separado cada grado
+```
+Más interesante aún, podemos buscar la distribución de grado de cada tipo de nodo (bebida o ingrediente) y ver si observamos alguna diferencia
+
+```{r}
+g = g %>% activate(nodes) %>%
+  mutate(grado=degree(g)) # Ahora sí, directamente agregamos una columna que sea de grados.
+
+g %>% activate(nodes) %>% as.data.frame() %>%
+  ggplot(mapping=aes(x=grado,fill=type)) +
+  geom_histogram(binwidth = 1) 
+
+g %>% activate(nodes) %>% as.data.frame() %>%
+  ggplot(mapping=aes(x=grado,fill=type)) +
+  geom_histogram(binwidth = 1) + xlim(c(0,10))
+
+```
+Estas distribuciones son claramente muy distintas: mientras que las bebidas se concentran alrededor de de 4 ingredientes, los ingredientes varían mucho más: algunos pocos son usados en una miriada de bebidas, mientras que la mayoría sólo se usa en unas pocas bebidas. 
+
+Incorporar esta información al dibujo del grafo puede ser un poco dificil, sobre todo en imágenes estáticas como estas:
+
+```{r}
+require(ggraph)
+
+g %>%
+  ggraph() + 
+  geom_edge_link(edge_width=.1,alpha=0.5) +
+  geom_node_point(mapping = aes(color=type,shape=type,size=grado)) + # Pedimos que el size del nodo refiera al grado, y la hacemos a los más grandes más transparentes.
+  theme_graph()
+```
+
+Por eso también suele ser muy útil explorar herramientas para visualización dinámica. En esta área tenemos el paquete `visNetwork`
+
+```{r}
+# install.packages('visNetwork')
+require(visNetwork)
+```
+
+Si bien este paquete en sí mismo permite construir redes y explorarlas, desde nuestra perspectiva de usuaries de `igraph` nos interesa simplemente graficar nuestras redes de forma interactiva.
+
+```{r}
+# visIgraph(g) esto ya nos muestra la red pero de forma poco interesante
+g %>% activate(nodes) %>%
+  mutate(label=name,color=ifelse(type=='Drink','red','blue'),size=grado,shape=ifelse(type=='Drink','square','triangle')) %>% #Agregamos directamente columnas con color, forma y tamaño para que los lea visNetwork
+  visIgraph(layout='layout_nicely',physics=TRUE) %>% # Convertimos a visNetwork y pedimos que tenga movimiento físico
+  visPhysics(barnesHut=list('damping'=0)) # Hacemos que el movimiento sea leeeento
+
+```
+
+En cualquier caso, una visualización óptima cuando se incluyen muchos vértices puede ser muy dificultosa.
+
+## Red monopartita
+
+Si nuestro objetivo es entender cómo se relacionan las bebidas entre sí _a través_ de los ingredientes, pero en sí no nos importan los ingredientes, podemos representar la red original ( _bipartita_ ) como una red _monopartita_, donde conectamos entre sí a las bebidas que comparten ingredientes. Nuevamente, acá vamos a enfocarnos en la exploración del dataset más que en las técnicas para calcularla (aunque pueden preguntar si les da curiosidad). Con `igraph` lo hacemos como
+
+```{r}
+gD = g %>% activate(nodes) %>% 
+  mutate(type=(type=='Drink')) %>% # Igraph necesita que el type sea lógico
+  bipartite_projection(which='true') %>%
+  as_tbl_graph()
+gD
+```
+Fijense que `igraph` nos borro el atributo `type` (que ya no sería útil ya que la red es monopartita) y agrego un atributo `weight` a los ejes, que lo que mide es la cantidad de ingredientes en común entre dos bebidas. También se crearon muchísimos ejes nuevos (ahora tenemos del orden de 14000!). La visualización directa de esta red no ayuda mucho, de nuevo debido al número de nodos:
+
+```{r}
+gD %>% 
+  ggraph() + 
+  geom_edge_link(mapping=aes(edge_width=weight,alpha=1/weight)) + # Ponemos el ancho del link en función al peso de ese link
+  geom_node_point(mapping = aes(size=grado,alpha=1/grado),color='blue') +
+  theme_graph()
+```
+
+Podemos filtrar aquellos ejes que sólo tengan peso mayor a cierto valor:
+
+```{r}
+gD %>% 
+  activate(edges) %>%
+  filter(weight>3) %>% # Nos quedamos sólo con los ejes que representen al menos tres ingredientes
+  ggraph() + 
+  geom_edge_link(mapping=aes(edge_width=weight,alpha=1/weight)) +
+  geom_node_point(color='blue') +
+  theme_graph()
+```
+
+Podemos hacer un histograma sobre los pesos de las conexiones, para ver si las bebidas son parecidas o muy distintas entre sí:
+
+```{r}
+gD %>% activate(edges) %>% as.data.frame() %>% 
+  ggplot(mapping=aes(x=weight)) +
+  geom_histogram(binwidth = 1,fill='white',col='black') 
+```
+Este gráfico nos muestra que la mayoría de las bebidas comparten pocos ingredientes. Sin embargo, también hay algunas conexiones grandes, que representan más de 10 ingredientes compartidos.
+
+#### Ejercicio
+Basandose en el histograma, prueben hacer cortes sobre los pesos de los ejes y vean las estructuras que se forman. ¿Qué representan los grupos que obtienen? Elijan un número mínimo de ingredientes compartidos para que dos bebidas sean _parecidas_ y apoyandose en el gráfico, identifiquen que grupos de bebidas obtienen. La función `clusters` de `igraph` les puede ser muy útil. Retorna un vector con las componentes conexas de la red.
+
+```{r}
+(gD %>% activate(edges) %>% filter(weight>2) %>% # Tiramos ejes chicos
+   clusters())$membership %>% # Pedimos la "membresía" (a qué componente pertenecen) de los nodos
+  sort() %>% head(n=15)
+# Exploren el resultado de clusters!
+```
+
+#### Ejercicio (opcional para entusiastas)
+
+Repitan el analisis sobre la red monopartita pero de ingredientes en vez de bebidas. ¿Qué representan las conexiones en esa red? ¿Cuál es el ingrediente más versatil?
+
+
+## Homofilia
+
+Por último vamos a hacer un análisis de _homofilia_ en la red de bebidas. Para eso, vamos a considerar las categorías de los distintos tragos. Necesitamos volver al dataset original para recuperar esta información
+
+```{r}
+table(bebidas$strCategory) # Estas son las categorías
+
+gD = gD %>% activate(nodes) %>%
+  mutate(Category=bebidas$strCategory[match(toupper(bebidas$strDrink),name)]) # Agregamos las categorías haciendo un match con el dataframe original
+gD %>% activate(nodes) %>% as.data.frame() # Para explorarlo
+```
+Con esta información, la pregunta es: ¿Las bebidas de igual categoría comparten más ingredientes que con las de otras categorías?
+
+Para calcular esto nos vamos a volver a ensuciar un poco las manos codeando:
+
+```{r}
+cates = unique(bebidas$strCategory) # Agarramos las categorías
+M = matrix(0, nrow=length(cates), ncol=length(cates)) # En esta matriz vamos a guardar el peso de las relaciones entre categorías
+ejes = gD %>% activate(edges) %>% as.data.frame() # Agarramos los ejes
+nodos = gD %>% activate(nodes) %>% as.data.frame() # y nodos
+colnames(M) = rownames(M) = cates # Ponemos nombres a la matriz
+
+for(i in 1:nrow(ejes)){ # Recorremos todos los ejes
+  eje = ejes[i,] # Agarramos cada fila de ejes
+  Cfrom = nodos[eje$from,'Category'] # Vemos la categoría del punto de partida
+  Cto = nodos[eje$to,'Category'] # Igual pero de punto de llegada
+  M[min(Cfrom,Cto),max(Cfrom,Cto)] = M[min(Cfrom,Cto),max(Cfrom,Cto)] + eje$weight # Guardamos el valor actualizado, sumado lo nuevo.
+  M[max(Cfrom,Cto),min(Cfrom,Cto)] = M[min(Cfrom,Cto),max(Cfrom,Cto)]
+}
+M
+```
+#### Ejercicio
+
+Exploren y visualicen esta matriz. ¿Qué representa la diagonal en esta matriz? ¿Y los otros elementos? ¿Cuales son las categorías más relacionadas? ¿Hay alguna categoría que se vincule más con otras que con sí misma? ¿Cuál se relaciona en menor proporción?
+
+```{r}
+#install.packages('plot.matrix')
+require('plot.matrix')
+par(mar=c(5.1, 4.1, 4.5, 5.1)) # adapt margins
+plot(M, cex.axis=0.5)
+
+require(ggplot2)
+dat <- M
+names(dat) <- paste("X", 1:10)
+#install.packages('pheatmap') # if not installed already
+library(pheatmap)
+pheatmap(dat, display_numbers = T)
+```
+
+

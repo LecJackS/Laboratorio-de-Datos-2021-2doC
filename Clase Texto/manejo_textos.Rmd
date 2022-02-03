@@ -1,0 +1,304 @@
+---
+title: "Otras maneras de consumir datos"
+author: "Martin Elias Costa"
+date: "20 de Julio de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: Laboratorio de Datos
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Trabajando con textos
+
+Esta es solo una pequeña introducción al trabajo con la tecnología de la información que dio origen a todo: la escritura. Siendo uno de los paquetes instalables más antiguos de la humanidad y considerando que el proceso de instalación demora unos cuantos años escolares se podrán imaginar que se trata de una librería bastante compleja. En este notebook vamos apenas a rascar la superficie de ese inmenso universo.
+
+El texto escrito es una representación simbólica visual o táctil del lenguaje hablado. Esa representación nos permite almacenar sonidos y conceptos como una secuencia de caracteres discretos. A la vez, podemos decodificar esos símbolos y recuperar parcialmente la información de esos sonidos y conceptos. Exactamente lo que están haciendo ahora.
+
+Asi como los números tienen sus formas de ser almacenados y manipulados por los distintos lenguajes de programación, los textos también las tienen. Ya estuvimos usando varias de ellas pero ahora las vamos a presentar más formalmente. En 'R' las variables que almacenan textos son de tipo `character` pero también se les suele decir 'strings'.
+
+## Manejo de strings
+
+Para trabajar con strings vamos a usar algunas librerías especificas que nos van a simplificar la vida. Una de esas librerias es `stringr` (como el personaje de [The Wire](https://www.imdb.com/title/tt0306414/) - si no la vieron veanla). Es parte del 'tidyverse' asi que viene gratis al activarlo:
+
+```{r, echo=TRUE}
+library(tidyverse)
+```
+
+Las funciones que nos interesan son las que empiezan con *str\_*. Pueden consultar el [cheatsheet](https://evoldyn.gitlab.io/evomics-2018/ref-sheets/R_strings.pdf) de *stringr* con las distintas funciones y sus usos. Empecemos con un ejemplo, vamos a seguir sacandole el jugo al dataset de tragos. Traigamos al igual que en el notebook de grafos todas las bebidas.
+
+```{r}
+require(jsonlite)
+bebidas = NULL
+url_base = 'http://www.thecocktaildb.com/api/json/v1/1/search.php?f='
+letra = 'a'
+for(letra in letters){
+  print(paste('Letra:',letra))
+  dwld = fromJSON(paste(url_base,letra,sep=''))$drinks
+  bebidas = rbind(bebidas,dwld)
+  print(paste('Había',nrow(dwld),'bebidas'))
+}
+bebidas
+nrow(bebidas)
+```
+
+```{r}
+
+inst_IT = bebidas[,"strInstructionsIT"]
+inst_DE = bebidas[,"strInstructionsDE"]
+inst_EN = bebidas[,"strInstructions"]
+```
+
+Miremos uno de los textos en aleman:
+
+```{r}
+inst_DE[1]
+```
+
+Si queremos separar las palabras podemos usar la función *str_split*, que ya usamos en el TP de tragos. Queremos separar el string por cualquier caracter que **NO** sea una letra. Mirando el cheatsheet vemos que eso podemos hacerlo usando expresiones regulares. Una expresión regular es una manera de explicitar patrones de búsqueda dentro de secuencias. En este caso la expresión que nos va a servir es '[\^[:alpha:]]' es decir '[\^]' *\<\< cosas que no sean* '[:alpha:]' *\<\< caracteres alfabeticos*. Probemos:
+
+```{r}
+str_split(inst_DE, "[^[:alpha:]]")[1]
+```
+
+Vemos que la expresión funciona bastante bien aunque extrae algunos strings vacíos que luego tendremos que eliminar.
+
+### Aclaracion
+
+El proceso de separar un texto en elementos constituyentes (usualmente palabras aunque no siempre) se llama con el anglicismo "tokenizar". Este proceso es dependiente de cada idioma y suele ser un poco más complejo que aplicar una simple expresión regular; pero para nuestro pequeño experimento, este método nos va a alcanzar.
+
+Si bien vamos a ver más adelante que hay funciones específicamente armadas para "tokenizar", las expresiones regulares son una herramienta muy potente a la hora manipular *strings* y es recomendable aprender a usarlas. Ademas, suelen ser parte de las librerias básicas en la mayoría de los lenguajes. Dicho esto con un gran poder viene una gran responsabilidad como dijo [superman](https://www.youtube.com/watch?v=WL2qj07NSZ8). Y es muy fácil que las expreciones regulares se salgan de control (miren por ejemplo [la regex para validar direcciones de mail](http://www.ex-parrot.com/~pdw/Mail-RFC822-Address.html)).
+
+## Ejercicios de regex
+
+Usando la variable `stringr::words` que contiene algunas palabras comunes en ingles utilicen la función `str_view` para mostrar como extraerían diferentes patrones. Pongan el parámetro de *str_view* en *TRUE* para que solo muestre las palabras en las que encuentran el patrón. Por ejemplo, para encontrar todas las palabras que terminan en 'y' usaríamos:
+
+```{r}
+str_view(stringr::words, "y$", match = TRUE) # fijense que $ indica final de linea
+
+```
+
+Nótense que se resalta la porción del string que corresponde al patrón. Si queremos las que empiezan con 'y' usaríamos:
+
+```{r}
+str_view(stringr::words, "^y", match = TRUE) # fijense que $ indica final de linea
+```
+
+Si queremos las que empiezan con 'y' solo de tres caracteres:
+
+```{r}
+str_view(stringr::words, "^y..$", match = TRUE) # fijense que $ indica final de linea
+```
+
+Escriban una expresión regular para detectar:
+
+1.  Las palabras de 4 letras
+
+```{r}
+str_view(stringr::words, "^.{4}$", match = TRUE) 
+str_view(stringr::words, "^....$", match = TRUE) 
+```
+
+2.  Las palabras que tengan dos vocales seguidas
+
+```{r}
+str_view(stringr::words, "[aeiou]{2}", match = TRUE) 
+str_view(stringr::words, "[aeiou][aeiou]", match = TRUE) 
+```
+
+3.  Las palabras que empiecen con 'w' y terminen con 'e'
+
+```{r}
+str_view(stringr::words, "^w.*e$", match = TRUE) 
+# Si quisiera solo las que tengan alguna letra entre ellas
+str_view(stringr::words, "^w.+e$", match = TRUE) 
+
+```
+
+4.  Las palabras que contengan 'th' y no empiecen con 'a'
+
+```{r}
+str_view(stringr::words, "^[^a].*th|^th", match = TRUE) 
+```
+
+
+## Frecuencia de las palabras
+
+Si ahora aplicamos la regex para separar palabras a todos los textos podemos contar cuantas veces aparece cada palabra y ordenarlas por frecuencia. Si lo graficamos en forma log-log tiene esta pinta:
+
+```{r}
+
+words_DE = str_split(inst_DE, "[^[:alpha:]]") # aplicamos el split a todos los textos
+words_DE = table(tolower(unlist(words_DE))) # llevamos todo a minusculas y contamos las palabras
+words_DE = as.data.frame(words_DE) # convertimos en dataframe
+colnames(words_DE)[1] = 'Word' # renombramos a la columna 1 como Word
+words_DE = words_DE[words_DE$Word != '',] # Quitamos el string vacio
+words_DE %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             ggplot(aes(x=log(rank), y=log(Freq))) +  # Graficamos
+             geom_point(shape=21, color='black', fill='white') 
+
+      
+```
+
+¿A qué les hace acordar?
+
+## Ejercicio
+
+Repitan lo anterior para el italiano y para el inglés. Pongan las curvas en un solo gráfico.
+
+¿Qué les parece que está pasando? Pista: [Ley de Zipf](https://en.wikipedia.org/wiki/Zipf%27s_law)
+
+```{r}
+
+
+words_IT = str_split(inst_IT, "[^[:alpha:]]") # aplicamos el split a todos los textos
+words_IT = table(tolower(unlist(words_IT))) # llevamos todo a minusculas y contamos las palabras
+words_IT = as.data.frame(words_IT) # convertimos en dataframe
+colnames(words_IT)[1] = 'Word' # renombramos a la columna 1 como Word
+words_IT = words_IT[words_IT$Word != '',] # Quitamos el string vacio
+words_IT %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             ggplot(aes(x=log(rank), y=log(Freq))) +  # Graficamos
+             geom_point(shape=21, color='black', fill='white') 
+```
+
+```{r}
+
+words_EN = str_split(inst_EN, "[^[:alpha:]]") # aplicamos el split a todos los textos
+words_EN = table(tolower(unlist(words_EN))) # llevamos todo a minusculas y contamos las palabras
+words_EN = as.data.frame(words_EN) # convertimos en dataframe
+colnames(words_EN)[1] = 'Word' # renombramos a la columna 1 como Word
+words_EN = words_EN[words_EN$Word != '',] # Quitamos el string vacio
+words_EN %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             ggplot(aes(x=log(rank), y=log(Freq))) +  # Graficamos
+             geom_point(shape=21, color='black', fill='white') 
+```
+Todo junto:
+
+```{r}
+ggplot() + 
+  (words_DE %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             geom_point(shape=21, mapping=aes(x=log(rank), y=log(Freq)), color='red', fill='white')) +
+  (words_IT %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             geom_point(shape=21, mapping=aes(x=log(rank), y=log(Freq)), color='blue', fill='white')) + 
+  (words_EN %>% arrange(by=desc(Freq)) %>% # Ordenamos en forma descendiente
+             mutate(rank=row_number()) %>% # Agregamos una columna con el orden
+             geom_point(shape=21, mapping=aes(x=log(rank), y=log(Freq)), color='orange', fill='white') )
+  
+```
+
+
+## Nubes de palabras
+
+Las nubes de palabras son una manera de visualizar grupos grandes de palabra y representar su importancia (usualmente por la frecuencia). Bien usadas son una manera de tener una vista a vuelo de pajaro que permita despertar y guiar nuevas preguntas. Sin embargo, como siempre, esas intuiciones tendrán que ser luego complementadas por métodos más cuantitativos. Hay un paquete de R especificamente diseñado para generar nubes de palabras que podemos usar: *wordcloud* Veamoslo con un ejemplo (recuerden instalarlo si no lo tienen).
+
+```{r}
+require(wordcloud)
+```
+
+Podemos graficar las palabras anteriores segun su frecuencia:
+
+```{r}
+wordcloud(words = words_DE$Word, freq = words_DE$Freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+```
+
+## Ejercicio
+
+Hagan las nubes de palabra según frecuencia para italiano y para inglés. ¿Qué notan sobre las palabras más frecuentes?
+
+```{r}
+wordcloud(words = words_IT$Word, freq = words_IT$Freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+```
+
+```{r}
+wordcloud(words = words_EN$Word, freq = words_EN$Freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+```
+
+## ¿Qué rol juegan las palabras más frecuentes de un idioma?
+
+(Usen google translate para ver cuales son las palabras mas frecuentes.)
+
+En general las palabras más frecuentes no suelen ser las más informativas. Son conectores, artículos, pronombres, etc. Si tuviésemos que representar lo mejor posible la receta de un trago en pocas palabras (resumir digamos) no elegiríamos las más frecuentes. ¿Cuáles elegirían?
+
+¿Si quisiésemos buscar el trago más parecido a un Manhattan en base a su receta, como lo harían?
+
+## TF-IDF
+
+Hay una idea sencilla pero bastante potente para representar y operar sobre colecciones de textos que surge de esta observación de que la frecuencia relativa de las palabras nos habla de alguna manera de su 'densidad de información'. Esa técnica se conoce como TF-IDF por sus siglas en inglés Term Frequency-Inverse Document Frequency. Aca hay un [pequeño texto](https://medium.com/datos-argentina/de-ciencia-y-m%C3%BAsica-procesamiento-del-lenguaje-natural-7897560fdd03) de divulgación sobre el tema que escribí hace un tiempo. Tómense 7 min para leerlo antes de seguir. Un poco autorreferencial autocitarme, lo se... pero la alternativa que era copiar y pegar me pareció peor.
+
+### Calculando la matriz de TF-IDF
+
+Para esto vamos a usar un paquete 'tidytext' que nos va a simplificar la construcción de la tabla de palabras-documentos. Recuerden instalarla antes.
+
+```{r}
+library(tidytext)
+```
+
+Vamos a volver a contar la frecuencia de las palabras pero guardando la identidad del documento del que vienen. Podemos aprovechar la función especifica de tidytext para esto *unnest_tokens*.
+
+```{r}
+
+words_de <- tibble(text=inst_EN, doc=1:length(inst_EN)) %>%
+            unnest_tokens(word, text) %>%
+            count(doc, word, sort = TRUE)
+
+```
+
+Calculamos los pesos TFIDF con *bind_tf_idf*
+
+```{r}
+words_tfidf = bind_tf_idf(words_de, word, doc, n)
+words_tfidf
+```
+
+Podemos ver cuanto se parecen los textos entre si simplemente calculando la 'distancia' de esos vectores que representan a cada texto. Para eso podemos usar la funcion *pairwise_similarity* de 'widyr' (recuerden instalarla si no la tienen)
+
+```{r}
+library(widyr)
+similarities = words_tfidf %>% 
+  pairwise_similarity(doc, word, tf_idf, sort = TRUE)
+
+```
+
+En la tabla 'similarities' podemos buscar recetas que se parezcan. Por ejemplo, ¿Cuál es la receta más parecida a la del trago 80?
+
+Receta del trago 80:
+
+```{r}
+inst_EN[80]
+
+```
+
+```{r}
+similarities[similarities$item1==80,]
+```
+
+Vemos que la receta 11 es la que más se parece
+
+```{r}
+inst_EN[11]
+```
+
+## Ejercicio
+
+Usen los pesos de TFIDF para extraer los 4 términos más importantes de cada receta y compárenlos con los 4 términos más frecuentes de esa misma receta. Elijan recetas más o menos largas. ¿Qué ven? ¿Cuál les parece una mejor descripción resumida de la receta?
+
+```{r}
+words_tfidf
+```
+```{r}
+words_tfidf %>% select(word, n) %>% map(inst_EN[1])
+```
+

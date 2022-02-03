@@ -1,0 +1,528 @@
+---
+title: "Nociones básicas de estadística descriptiva y visualización"
+author: "Ariel Salgado"
+date: "20 de Julio de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+# Antes de la imagen... _los números_
+
+Previo a las herramientas básicas para la visualización, vamos a empezar considerando algunas magnitudes básicas que nos permiten resumir los datos a unos pocos. En todo este proceso vamos a pensar en magnitudes que podemos representar mediante números. Nos van a interesar:
+
+ * Medidas de locación ó centro de masa: la **moda**, la **mediana** y la **media**.
+ * Medidas de escala o variabilidad: la **distancia intercuartil** y la **varianza**.
+ 
+ 
+## Antes de los números... _los datos_
+
+Previo a calcular cualquiera de estas medidas vamos a cargar un dataset para poder rastrear el _sentido_ que tienen todos estos números. Es fundamental en cualquier análisis tener presente el contenido atrás de cada medida, en oposición al cálculo sin ninguna dirección conceptual.
+
+```{r}
+datos = read.csv('ar_properties.csv')
+```
+El comando `read.csv` nos permite, como es de esperarse, leer un archivo en formato _csv_. El formato _csv_ nos va a acompañar durante toda la materia (y mucho más allá de seguro). Su nombre proviene de _comma separated values_, debido a su estructura. En un archivo _csv_ la información se encuentra ordenada en una matriz, cuyas filas corresponden a observaciones (separadas por saltos de linea) y sus columnas a distintas caracteristicas de las observaciones (separadas por comas). En `R` el formato fundamental con el que presentamos este tipo de datos **estructurados** es el `data.frame`.
+
+```{r}
+head(datos)
+```
+
+Este dataset provisto por _properarti_ nos da información de alquileres y ventas en distintas locaciones. Fue presentado en las clases de _Andrés_ previamente, por lo que no lo vamos a describir en profundidad aquí. De momento sólo nos interesa explorar la estructura de este objeto.
+
+El `data.frame` tiene varias columnas. Estas columnas están nombradas a través de la primer linea del archivo de los datos.
+
+```{r}
+print(readLines('ar_properties.csv',n=1))
+print(colnames(datos))
+```
+
+El comando `readLines` lee el archivo _csv_ como archivo de texto. La función `colnames` lee los nombres de las columnas de un `data.frame`. Como pueden ver, la primer linea del _csv_ tiene los nombres de las columnas que vendran luego. Si bien esto no es una norma absoluta, representa la situación más común.
+
+Para acceder a una de las columnas de `datos` tenemos al menos dos opciones. La primera surge de pensar al `data.frame` como una matriz, que tiene dos "componentes" (filas y columnas). Por ejemplo, veamos el `property_type` del elemento 10:
+
+```{r}
+print(datos[10,'property_type'])
+print(datos[10,23])
+```
+
+Vemos dos formas de acceder al dato: en la primera indicamos el nombre de la columna, y el número de fila. En el segundo indicamos fila y columna numéricamente. Cualquiera de las dos funciona igualmente. Si hubiera un nombre para las filas, también podríamos acceder usando sus nombres. `R` incluye a nivel base otra forma más de acceder a las columnas, que ayuda a pensar al objeto `datos` como un objeto que incluye otros en su interior (forma muy útil de pensar a futuro):
+
+```{r}
+datos$property_type[10]
+```
+
+En este caso, estamos indicando la columna usando el símbolo `$` a través de su nombre. `datos$property_type` es un vector con tantos elementos como filas tiene `datos`.
+
+Perfecto, con todo esto que aprendimos, vamos a tomar los datos de superficie de este dataset y vamos a aplicarle un poco de estadística descriptiva. Nuestra variable de análisis va a ser `superficie`:
+
+```{r}
+superficie = datos$surface_total
+```
+
+y lo vamos a combinar con el tipo de propiedad:
+
+```{r}
+propiedad = datos$property_type
+```
+
+y por último nos vamos a restringir a propiedades de Capital Federal, Argentina. Para esto necesitamos identificar cuales elementos de estos vectores (o filas de `datos`) corresponden a Argentina. Una de las formas de hacerlo en `R` es a través de la operación identidad `==`. Esta operación retorna un vector lógico con `TRUE` en las posiciones donde la identidad se cumple y `FALSE` donde no. La información respectiva al país está en la columna `l1` y la respectiva a la ciudad en `l2`:
+
+```{r}
+este_pais = datos$l1 == 'Argentina'
+esta_ciudad = datos$l2 =='Capital Federal'
+
+superficie = superficie[este_pais & esta_ciudad]
+propiedad = propiedad[este_pais & esta_ciudad]
+```
+
+Al evaluar un vector en un vector lógico, sólo retenemos los elementos en los que tenemos `TRUE`.
+
+_Recuerden: siempre es útil llamar a las variables que usen de una forma que ustedes o quienes vaya a leer su trabajo puedan entender. Un script lleno de x,y,j,k,l pueden ser dificil de entender algunas semanas más tarde._
+
+## Antes de los números... _NA_
+
+Antes de ponernos a hacer cálculos o análisis de cualquier variable, es fundamental explorar los datos para garantizar que las medidas que tomemos tengan sentido. En este caso, nuestro dataset variable `superficie` incluye muchos valores que están ausentes. `R` representa estos valores con la variable `NA` (not answer). El álgebra de la variable `NA` no nos ayuda a hacer cálculos `NA+x=NA`, así como cualquier otra operación. Por esto, necesitamos sacarnos estos valores de encima de antemano. Para eso, nos es útil el comando `is.na`:
+
+```{r}
+print(table(is.na(superficie)))
+superficie_full = superficie
+propiedad_full = propiedad
+na_superficies = is.na(superficie)
+superficie = superficie[!na_superficies]
+propiedad = propiedad[!na_superficies]
+```
+
+En ese trozo de código:
+
+* Usamos la función `is.na` sobre `superficie`. Esto retorna un vector de igual longitud que `superficie`, pero de elementos lógicos (`TRUE` o `FALSE`). `TRUE` en el elemento _i_-esimo indica que ese elemento es `NA`.
+
+* Construimos una tabla que indica la cantidad de elementos `NA` en `superficie`.
+
+* Guardamos la variable original en `superficie_full` y en `superficie` sólo mantuvimos aquellos elementos que no (`!`) eran `NA`. Lo mismo hicimos para `propiedad`
+
+Un último paso: dado que ya no vamos a usar ninguna variable extra, podemos remover de la memoria todo lo que no vamos a usar:
+
+```{r}
+rm(list=setdiff(ls(),c('propiedad','superficie')))
+```
+`ls()` nos devuelve un vector con todos los nombres de las variables presentes. `rm` remueve todas las variables con los nombres que hayan sido indicados. Exploren que resulta de hacer `setdiff(ls(),c('propiedad','superficie'))`.
+
+
+_A friendly reminder: En este notebook queremos hablar de estadística descriptiva pero por ahora sólo revisamos datos. Esto es fiel al proceso real de analizar un dataset. Siempre es necesario revisarlo como primer medida._
+
+## Después de los _NA_... _los números_
+
+Tanto las magnitudes resumen como las figuras tienen el objetivo de resumir una gran cantidad de información. Mientras que las figuras permiten presentar mucha información a la vez, las magnitudes resumen nos permiten comprimir en un sólo número todo el dataset, capturando únicamente un aspecto. Empecemos por las de locación.
+
+### Magnitudes de locación:_moda, media y mediana_ 
+* La moda de una muestra de datos representa el dato maś común en el dataset. Medirla requiere considerar la _frecuencia_ con la que aparece cada valor posible. Exploremoslo un poco con nuestras dos variables:
+
+```{r}
+tb = table(superficie)
+head(sort(tb,decreasing=TRUE)) # sort ordena, decrecientemente si decreasing=TRUE
+```
+
+ `R` no incluye una función para calcular directamente la moda, pero con `table` podemos generar un vector que cuente el número de apariciones de cada objeto. En este caso, `40` es la superficie más usual, seguida muy de cerca por `50` y `45` y `38`. Estos valores son muy parecidos entre sí. Esto nos muestra la primer dificultad de esta magnitud: cuando consideramos una variable _continua_ (en este caso, metros cuadrados), considerar individualmente los valores que toma la variable puede tener poco o ningún significado. Por el contrario, consideremos el tipo de propiedad:
+
+```{r}
+head(sort(table(propiedad),decreasing=TRUE))
+```
+Ahora sí, que los valores son claramente diferenciables, vemos que el grueso de las propiedades son departamentos. A veces es útil calcularlo como proporciones:
+
+```{r}
+# Dos formas
+tb = sort(table(propiedad),decreasing=TRUE)
+print(head(tb/sum(tb)))
+print(head(prop.table(tb)))
+```
+El 71% de las propiedades son departamentos, marcadamente el tipo más común de propiedad en la C.A.B.A.
+
+* La mediana de una muestra de datos mide el centro de los valores que toma. Para que la mediana tenga sentido es necesario que tengamos una forma de _ordenar_ la muestra. Por lo tanto, así como la moda fue útil para la variable categórica `propiedad` y no para la `superficie`, en este caso estaremos en la situación inversa. Para un vector ordenado `x`, de longitud `N`, definimos su mediana como
+
+```
+x[(N+1)/2] # Si N es impar
+x[N/2] + x[N/2+1] # Si N es par
+```
+En `R` la calculamos como
+
+```{r}
+median(superficie)
+```
+Es decir que el 50% de las propiedades tienen una superficie menor a 65 metros cuadrados, y el 50% tiene una superficie mayor.
+
+* La media, nuevamente, sólo tiene sentido para variables _numéricas_, y consiste del muy conocido **promedio**. Se calcula sumando todos los valores de la muestra y diviendo por la longitud de la misma. La podemos calcular como
+
+```{r}
+sum(superficie)/length(superficie)
+mean(superficie)
+```
+`sum` suma todos los valores que hay en un vector, `length` mide la longitud del vector y `mean`calcula el promedio directamente.
+
+El promedio también mide el centro de la distribución, pero de una forma distinta de la mediana. En este caso, vemos que la mediana es más chica que el promedio. Quedará más claro luego, pero esto se debe a que el promedio es más sensible a los valores altos. En ese sentido decimos que la mediana es más _robusta_ que el promedio (cambia menos al cambiar los datos).
+
+## Medidas de escala: _rango, cuantiles y varianza_
+
+En la sección anterior calculamos algunas medidas que nos indican donde están los valores típicos de una muestra de datos. Por ejemplo, sabemos que el 50% de las propiedades tienen menos de 65 metros cuadrados y que en promedio, si buscamos una propiedad en venta esta tendrá alrededor de 150 metros cuadrados. Sin embargo, nos falta información de la escala de estos valores. Si encuentro una propiedad de 200 metros cuadrados, ¿es gigante, o sigue siendo lo típico? ¿Cuál es la propiedad más chica que puedo encontrar? Toda esta información es útil también, y se nos pierde con las medidas anteriores. Veamos entonces algunas otras medidas útiles para representar la región en la que se encuentran los valores de la muestra.
+
+* Rango: el rango de la variable es la medida más sencilla, y consiste en considerar los valores máximos y mínimos. Acá vemos tres formas de calcularlos:
+
+```{r}
+print(min(superficie))
+print(max(superficie))
+print(range(superficie))
+```
+Entonces, sabemos que el 50% de las propiedades tiene `superficie` entre 0 y 65 y el otro 50% entre 65 y 129 189. 
+
+* Cuartiles: Podemos pensar a los cuantiles como una generalización del rango y la mediana. El cuantil $X$ es aquel que deja un $X%$ de los valores a la izquierda y un $(100-X)%$ a la derecha. La mediana es el cuantil 50, el mínimo es el cuantil 0 y el máximo el cuantil 100. Suelen ser de interés también los cuantiles 25 y 75, llamados _cuartiles_. Estos marcan el 50% de los valores, pero alrededor de la mediana. En `R` los calculamos con la función `quantile`. 
+
+```{r}
+print(quantile(superficie))
+print(quantile(superficie,.1))
+```
+Si usamos la función directamente, nos devuelve valores para X=0,25,50,75 y 100. Sino, podemos pedir para un X en particular (notar que indicamos X/100 en la función).
+
+Vemos que el primer cuartil (X=25) es 42 metros cuadrados y el tercero (X=75) es 120 metros cuadrados. Esto empieza a sugerirnos que entre el mínimo (0 metros cuadrados) y el tercer cuartil (120 metros cuadrados), tenemos un crecimiento más uniforme o homogeneo (un aumento de 25 en X se traduce en un aumento de 50 en superficie) que luego del tercer cuartil (X=75) cubrimos un rango de valores mucho más grande (de 120 a 129 189).
+
+La **distancia intercuartil** mide la distancia entre el 1er y el 3er cuartil. En `R` lo podemos calcular directamente como
+
+```{r}
+IQR(superficie)
+```
+
+* La varianza mide cuanto varian los datos alrededor del promedio. Por razones que caen fuera de esta materia (y veran a futuro) la calculamos como 
+
+$$
+V = \frac{1}{N-1}\sum^N_{i=1}(X_i-P)^2
+$$
+donde $P$ es el promedio del vector $X$. Obviando el hecho de que dividimos por $N-1$ en vez de $N$, lo que mide $V$ es el promedio de $(X_i-P)^2$. Notemos que $V$ tiene unidades de $X^2$. En nuestro ejemplo, serían metros a la cuarta. Por esta razón, se suele usar la _desviación estandar_ $SD$ que es la raíz cuadrada de $V$, $SD = \sqrt{V}$. Esta magnitud sí tiene las mismas unidades que $X$. Nos indica entonces una distancia promedio de los valores al promedio de la muestra. En `R` la calculamos como:
+
+```{r}
+print(var(superficie))
+print(sd(superficie))
+```
+La elevada variabilidad de estos datos hace referencia a la escala enorme en la que varían: tenemos propiedades que van desde 0 metros cuadrados a 129 189 metros cuadrados.
+
+## _En conclusión..._
+
+Si bien no profundizamos en las posibles ventajas y desventajas de cada una de estas magnitudes, tenemos a grandes rasgos dos tipos de medidas: de centro y de escala. Las medidas de escala hablan de cuanto varían los datos de una muestra, y los de centro alrededor de donde varían. En este dataset en particular encontramos que la superficie de las propiedades tiene una variación grande en comparación a lo que consideramos "los valores típicos". Fijense que
+
+```{r}
+print(IQR(superficie)/median(superficie))
+print(sd(superficie)/mean(superficie))
+```
+Mientras que la distancia intercuartil es del mismo orden que la mediana, la desviación estandar es varias veces más grande que el promedio. Nuevamente, la visión que nos da la mediana y la distancia intercuartil es más moderada que la que nos muestra el promedio y la desviación estandar. Esto hace referencia a que hay pocas propiedades de gran superficie.
+
+Una última función que resume gran parte de lo que vimos en este tramo es 
+
+```{r}
+summary(superficie)
+```
+Esta función es especialmente interesante bajo el paradigma en el que se desarrolla `R`. Veremos en otras aplicaciones que está pensada para ser aplicable a una gran variedad de datos, respondiendo siempre algun conjunto de medidas resumen que permiten tener un pantallazo de los datos.
+
+En otros casos puede ser menos interesante:
+```{r}
+summary(propiedad)
+```
+
+# Visualizando
+
+Con toda la cancha que ganamos con las medidas anteriores, vamos a explorar ahora como visualizar esta información. Los gráficos posibles son ilimitados y no vamos a intentar cubrir todos a la vez. Empecemos teniendo un pantallazo modesto.
+
+### Scatterplot ordenado
+
+Lo primero que podemos hacer es graficar los datos para poder verlos todos a la vez.
+
+```{r}
+plot(superficie)
+```
+
+Graficando directamente la variable, `R` nos coloca la posición ordinal en el eje $x$ y el valor de `superficie` en el eje $y$. El problema es que así no podemos visualizar nada de la estructura que hay en los datos. Una primer opción es ordenarlos:
+
+```{r}
+plot(sort(superficie))
+plot(sort(superficie),log='y')
+```
+
+Ahora sí, vemos que el grueso de los datos está en los valores chicos, y que sólo al final tenemos un conjunto de propiedades enormes. Agregar escala logaritmica en el eje $y$ nos permite distinguir un poco mejor el crecimiento de la variable.
+
+### Boxplot
+
+El boxplot es un tipo de gráfico que nos permite visualizar gráficamente la información que nos daba la función `summary`.
+
+```{r}
+boxplot(superficie)
+boxplot(superficie,outline = FALSE)
+```
+
+El boxplot nos dibuja una caja cuyo tamaño es igual a la distancia intercuartil, y dibuja una linea negra donde está ubicado el promedio. Por último, se agregan dos "bigotes" que se extienden hasta 1.5 veces la distancia intercuartil. Los datos que caen fuera de estos bigotes son considerados _outliers_, y son indicados como puntos. En nuestro caso, graficar el boxplot directamente nos muestra cuanto más grande es el rango que cubren los outliers. La opción `outline=FALSE` nos permite graficar el boxplot sin los outliers.
+
+
+## Histogramas y barplots
+
+Los histogramas y barplots nos permiten volver sobre la idea de medir la frecuencia con la que aparecen los distintos tipos de datos. Empecemos por el barplot. Típicamente, usaremos un barplot para mostrar frecuencia o cantidad de apariciones de una variable categórica.
+
+```{r}
+barplot(table(propiedad),las=2,cex.names=0.7)
+barplot(prop.table(table(propiedad)),las=2,cex.names=0.7)
+barplot(sort(prop.table(table(propiedad)),decreasing=TRUE),las=2,cex.names=0.7)
+```
+
+Este gráfico nos permite ver la cantidad de propiedades de cada tipo a la vez. Mejor aún, podemos graficar la frecuencia de cada una, y ordenarlas por cantidad de casos para hacer más fácil la comparación.
+
+El histograma nos permite graficar frecuencias para datos que sean continuos. Para esto, lo que se hace es definir un conjunto de _bines_. Lo que se hace es graficar una barra de ancho igual al tamaño del _bin_ y de alto igual a la cantidad de casos que caen dentro de ese bin. En `R` podemos especificar los bines de dos formas, ambas a través del argumento `breaks`. Una consiste en indicar la cantidad de bines a usar. En este caso se divide el rango de la variable en el total de bines y eso define el ancho de cada uno. Otro es dar un vector indicando los principios y finales de cada bin
+
+```{r}
+hist(superficie,breaks=1000)
+hist(superficie,breaks=seq(min(superficie),max(superficie)+25,25),xlim=c(0,500))
+```
+
+Es útil en casos como este donde el rango es muy grande hacer foco en regiones particulares del gráfico usando `xlim`. Sobre este gráfico podemos agregar ahora algunas de las medidas resumen
+
+```{r}
+hist(superficie,breaks=seq(min(superficie),max(superficie)+25,25),xlim=c(0,5000))
+abline(v=mean(superficie),col='red',lty='dashed')
+abline(v=mean(superficie)+sd(superficie),col='pink',lty='dashed')
+abline(v=mean(superficie)-sd(superficie),col='pink',lty='dashed')
+abline(v=median(superficie),col='blue',lty='solid')
+abline(v=quantile(superficie,c(0.25,0.75)),col='skyblue',lty='solid')
+
+hist(superficie,breaks=seq(min(superficie),max(superficie)+25,25),xlim=c(0,500))
+abline(v=mean(superficie),col='red',lty='dashed')
+abline(v=mean(superficie)+sd(superficie),col='pink',lty='dashed')
+abline(v=mean(superficie)-sd(superficie),col='pink',lty='dashed')
+abline(v=median(superficie),col='blue',lty='solid')
+abline(v=quantile(superficie,c(0.25,0.75)),col='skyblue',lty='solid')
+```
+
+Mientras que los cuartiles capturan bien donde está el grueso de la distribución, la desviación estandar captura el rango enorme de valores de superficie posibles. Volviendo sobre la **moda**, vemos que está alrededor de 50.
+
+## Condicionando
+
+Para explorar mejor un dataset, suele ser muy útil diferenciar los valores que toma una variable según los de otra. Bajo esta lógica, podemos repetir todo el análisis separando por tipo de propiedad. Veamos sólo dos de todas las propuestas posibles.
+
+* Construyamos medidas sumarias para cada tipo de propiedad:
+
+```{r}
+props_tipo = unique(propiedad) # Me quedo con los tipos de propiedades
+sumario = matrix(nrow=4,ncol=length(props_tipo)) # Armo una matriz con 4 filas (4 medidas) y tantas columnas como propiedades
+colnames(sumario) = props_tipo # Le ponemos nombre a las columnas
+row.names(sumario) = c('Media','SD','Mediana','IQR')
+for(prop in props_tipo){
+  sups = superficie[propiedad==prop]
+  sumario[1,prop] = mean(sups)
+  sumario[2,prop] = sd(sups)
+  sumario[3,prop] = median(sups)
+  sumario[4,prop] = IQR(sups)
+}
+print(round(sumario,2))
+```
+
+Podemos graficar ahora las medias y las medianas por ejemplo:
+
+```{r}
+barplot(sort(sumario['Media',],decreasing=TRUE),las=2,cex.names=0.7)
+barplot(sort(sumario['Mediana',],decreasing=TRUE),las=2,cex.names=0.7)
+```
+
+Ambas magnitudes nos muestran un resultado idéntico en términos de orden, más allá de que el valor particular cambie.
+
+* Veamos cómo resultan los boxplots de cada una de estas variables en conjunto. En `R` podemos solicitar boxplots separados por una segunda variable usando el simbolo `~`:
+
+```{r}
+boxplot(superficie~propiedad,las=2,cex.axis=0.7,xlab='')
+boxplot(superficie~propiedad,outline=FALSE,las=2,cex.axis=0.7,xlab='')
+abline(h=mean(superficie),col='red')
+abline(h=median(superficie),col='blue')
+```
+
+Este gráfico nos permite ver un resumen general de tamaño de cada tipo de propieda. Vemos que la mediana está dominada por los departamentos, el tipo más abundante de propiedad. El resto de las propiedades suelen ser más grandes. El promedio muestra un balance entre todas las categorías.
+
+
+## Pares de variables
+
+Todo lo que armamos hasta acá nos sirvió para describir una sóla variable. Lo que nos queda por este notebook es explorar qué podemos hacer para medir la relación entre dos variables. Para esto vamos a sumar dos variables más a nuestro análisis. 
+
+```{r}
+datos = read.csv('ar_properties.csv')
+operacion = datos$operation_type
+superficie_c = datos$surface_covered
+selector = !is.na(datos$surface_total) & datos$l1=='Argentina' & datos$l2=='Capital Federal'
+operacion = operacion[selector]
+superficie_c = superficie_c[selector]
+```
+
+Con esto, tenemos también el tipo de operación (venta-alquiler) y la superficie cubierta de la propiedad. Empleemos estos datos para ejemplificar dos medidas de la relación entre magnitudes. Con los boxplots calculados por tipo de propiedad vimos un primer ejemplo de como combinar una variable categórica con una continua. Veamos ahora dos continuas, y dos categóricas.
+
+### Dos variable categóricas: tipo de inmueble y tipo de operación
+
+Podemos considerar ahora dos tipos de variable categórica conjuntamente. En este momento, lo que podemos observar es la frecuencia conjunta entre ambas categorías. Para esto, nuevamente usamos la función `table`:
+
+```{r}
+tb = prop.table(table(propiedad,operacion))
+round(tb,3)
+```
+Podemos hacer algunas preguntas a esta tabla, como cual es la situación más común:
+
+```{r}
+index = which(tb==max(tb),arr.ind = TRUE) # Array de longitud dos con los indices de cada tipo
+print(rownames(tb)[index[1]])
+print(colnames(tb)[index[2]])
+```
+Es decir que lo más común son departamentos en venta. También podemos calcular algunas frecuencias restringidas, como ser:
+
+```{r}
+print(rowSums(tb))
+print(colSums(tb))
+```
+De aquí reobtenemos las frecuencias anteriores, y también podemos obtener las frecuencias de cada tipo de operación. Mientras que la tabla que cruza ambas variables se llama _conjunta_, cada una por separado se dice _marginal_.
+
+
+Podemos graficar esta matriz, de forma de ver como se relacionan ambas variables.
+
+Una opción es un barplot
+
+```{r}
+barplot(t(tb),legend=TRUE,col=c('white','black','gray'),las=2,cex.names=0.7)
+```
+
+Otra es graficar la matriz como una cuadricula coloreada:
+
+```{r}
+image(tb,col=hcl.colors(21, "Blue-Red 3", rev = TRUE),breaks=seq(min(tb),max(tb),length.out = 22),xaxt='n',yaxt='n')
+axis(side=1,at=seq(0,1,length.out = nrow(tb)),label=rownames(tb),las=2,cex.axis=0.7)
+axis(side=2,at=seq(0,1,length.out = ncol(tb)),label=colnames(tb),las=3,cex.axis=0.6)
+```
+
+A un gráfico como este le falta una leyenda indicando qué rango de valores representa cada color. Más adelante, al incluir `ggplot2`, ese tipo de problemas se resolverá mucho más fácilmente.
+
+Otro gráfico que nos permite visualizar fracciones o proporciones de casos es el gráfico de _mosaicos_.
+
+```{r}
+mosaicplot(tb,las=2)
+```
+
+El gráfico de mosaicos nos permite visualizar en términos de áreas la proporción que representa cada combinación.
+
+
+### Dos variables continuas
+
+Ahora consideremos dos variables continuas: la superficie y la superficie cubierta de cada propiedad. Esperamos que estas dos variables estén altamente relacionadas.
+
+Lo primero que podemos mirar es un _scatterplot_ entre ambas variables.
+
+```{r}
+plot(superficie,superficie_c)
+plot(superficie,superficie_c,xlim=c(0,500),ylim=c(0,500))
+```
+
+Mientras que en un montón de casos la superficie cubierta es idéntica a la superficie total (los puntos caen sobre la recta $x=y$), vemos que la superficie cubierta puede ser tanto mayor como menor que la superficie total. Suponiendo que esto es un error de carga, descartemos estos datos. 
+```{r}
+sup = superficie[superficie>=superficie_c ]
+sup_c = superficie_c[superficie>=superficie_c ]
+plot(sup,sup_c,xlim=c(0,1e3),ylim=c(0,1e3))
+```
+
+
+Claramente, ambas variables están fuertemente relacionadas. Una de las medidas más sencillas que resume esta relación es la _covarianza_. La covarianza se calcula como 
+
+$$
+COV(X,Y) = \frac{1}{N} \sum^N_{i=1} (X_i - P_X) (Y_i - P_Y)
+$$
+donde $P_X$ y $P_Y$ son los promedios de $X$ e $Y$. La correlación mide si cuando $X_i$ es mayor a $P_X$, $Y_i$ es mayor o menor que $P_Y$. Una covarianza cercana a cero da poca evidencia de relación entre las variables, mientras que una covarianza alta (ya sea positiva o negativa) indica una relación más fuerte. En este caso
+
+```{r}
+cov(sup,sup_c,use = 'complete.obs')
+```
+Al igual que ocurre con la varianza, la covarianza tiene unidades del producto entre las variables (metros a la cuarta en este caso) y es dificil de interpretar por si sola. La _correlación_ definida como
+
+$$
+COR(X,Y) = \frac{COV(X,Y)}{\sqrt{V_X V_Y}}
+$$
+convierte la covarianza en un número adimensional, acotado entre 0 y 1. Esto permite interpretar más fácilmente el resultado. Una correlación cercana a 1 indica que ambas variables crecen juntas y están muy relacionadas. Una correlación cercana a -1 indica que ambas variables crecen en sentidos contrarios. Con `R` la calculamos usando `cor`.
+
+```{r}
+cor(sup,sup_c,use='complete.obs')
+```
+Vemos que la correlación es bastante alta, en acuerdo como lo que muestra el gráfico.
+
+## Más allá de dos variables: _coplots_
+
+Cuando queremos considerar tres variables las visualizaciones pueden volverse más dificultosas. Cuando una de las tres variables es categórica, o puede dividirse en rangos fácilmente, los _coplots_ pueden ser útiles. Un coplot consiste de varios scatterplots entre dos variables, uno por cada categoría de la tercer variable de interés. Apliquemoslo a un subgrupo del total de los datos. Consideremos únicamente precios de propiedades en venta, que estén en dolares.
+
+
+```{r}
+precio = datos$price[selector]
+moneda = datos$currency[selector]
+
+datos_vd = data.frame(precio,moneda,superficie,operacion,propiedad)
+head(datos_vd)
+```
+
+Observando el dataset, vemos que hay una enorme cantidad de propiedades que no tienen asociado ningún precio ni moneda. Quedemonos únicamente con los que incluyen el precio en dolares y están en venta:
+
+```{r}
+datos_vd = datos_vd[is.element(datos_vd$moneda,'USD') & is.element(datos_vd$operacion,'Venta'),]
+head(datos_vd)
+```
+
+Ahora sí, hagamos un plot con esta
+
+```{r}
+plot(datos_vd$superficie,datos_vd$precio)
+```
+
+Este gráfico muestra una gran cantidad de dispersión, en la cual vemos que no siempre una mayor superficie se condice con un mayor precio: hay casas con precios muy altos y tamaños pequeños, y propiedades enormes con precios comparativamente muy bajos.
+
+
+```{r}
+coplot(precio ~ superficie | propiedad,data=datos_vd,rows=1)
+```
+
+Si bien este gráfico necesita aún un poco de ayuda (ya llegará _ggplot2_ a ayudarnos) para ser más fácil de leer, ya podemos observar algunas cosas:
+
+* Las propiedades de tipo _Departamento_, _Oficina_ y _Otro_ tienen el rango más amplio de precios.
+* Son los _PH_ los que tienen precios más bajos, y en particular incluyen al outlier con superficie enorme para un precio muy bajo.
+
+Haciendo un zoom podemos ver un poco más:
+
+```{r}
+coplot(precio ~ superficie | propiedad,data=datos_vd,rows=1,xlim=c(0,2e4))
+```
+
+Con este extra de detalle podemos ver qué hay (al menos) cuatro tipos distintos de propiedades:
+
+* Casas y Departamentos dibujan una forma de _L_ en términos de su superficie: hay tanto propiedades chicas y caras como baratas y grandes.
+
+* Depósitos y Lotes parece más cercanos a una relación en la que el tamaño crece con el precio
+
+* Locales comerciales, Oficinas y Otros están muestran una mezcla de ambas situaciones: si bien hay un crecimiento conjunto precio-superficie, también vemos claramente excepciones.
+
+* Cocheras y PHs parecen, al menos a esta escala, escapar un poco de esta norma. Aún así, si mejoramos la escala para esas dos, vemos que las cocheras aumentan su precio prácticamente de forma independiente de la superficie, mientras que los PHs semejan a lo que vimos para Departamentos.
+
+```{r}
+coplot(precio ~ superficie | propiedad,data=datos_vd[is.element(datos_vd$propiedad,c('PH','Cochera')),],rows=1)
+```
+
+## En conclusión
+
+En este notebook presentamos algunas medidas que sirven para resumir nuestros datos. En particular, tabla de frecuencias y moda para variables categóricas, y media, medianana, cuartiles y desviación estandar para variables numéricas. Esta separación de variables entre _categóricas_ y _numéricas_ nos acompañará a lo largo de los distintos análisis que hagamos.
+
+Las herrmientas para visualizar los datos también cambian según el tipo de variable que consideremos. Los scatterplots son la herramienta más común para variables numéricas, junto con histogramas. Los gráficos de barras y de mosaicos son muy útiles al considerar categóricas.
+
+Incorporar variables de distinto tipo nos permite interpretar la información del dataset y encontrar estructura dentro del mismo. Esto lo vimos ejemplificado en la relación entre precio y superficie. Luego de agregar información sobre el tipo de propiedad, observamos que no todos los tipos de propiedad se comportan de igual forma. Esto abre la puerta a la cuestión del _modelado_ de los datos. Por ejemplo, la pregunta: ¿cuál precio tendría más sentido indicar para aquellas propiedades que no lo tienen?
+
+
+## Para pensar...
+
+* _Medidas resumen_: Prueben usar este mismo dataset para calcular media, mediana, desvío estandar y distancia intercuartil de la superficie y el precio de los distintos tipos de propiedades.
+
+* _Alquileres_: Repitan el análisis realizado mediante el coplot para los precios de alquiler. ¿Se mantienen los mismos comportamientos?
+
+* _Incorporando la geografía_: Usando el dataset original, capture información del barrio al que corresponde cada publicación y use la información de los barrios para repetir partes del análisis de su interés. Algunas ideas: _precio medio por barrio_, _superficie por barrio_, _tipo de propiedad por barrio_. 

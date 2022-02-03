@@ -1,0 +1,137 @@
+---
+title: "TP-Visualización, parte 1"
+author: "Guillermo Solovey"
+date: "9/23/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Ejercicio 1
+
+A partir del siguiente gráfico, investigar cómo se usa y qué hace 
+el `geom_rug `. Agreguen una capa de geom_rug al plot existente
+pero que no use el mapeo de species en color.
+
+¿Qué hace `theme_minimal()`? ¿Hay otros themes que se pueden usar?
+
+```{r}
+if("palmerpenguins" %in% rownames(installed.packages()) == FALSE){
+  install.packages("palmerpenguins")
+}else{
+  cat("palmerpenguins ya instalado")
+}
+```
+
+
+```{r echo = T, eval = F}
+require(ggplot2)
+require(palmerpenguins)
+
+penguins <- penguins  # To appear in Environment
+
+filtro.na <- !(is.na(penguins$bill_depth_mm) | is.na(penguins$bill_length_mm))
+penguins <- penguins[filtro.na, ]
+
+ggplot(data = penguins, aes(x = bill_depth_mm, 
+                            y = bill_length_mm,
+                            color = species) ) +
+  geom_point() +
+  geom_rug() + 
+  theme_minimal()
+```
+
+#### Ejercicio 2
+
+¿Los pinguinos que tienen picos más anchos tienen picos más cortos o
+más largos?
+
+RTA: Uno podría usar geom_rug() para ver qué especie tiene pico más corto o más largo
+
+Pero como estamos en un contínuo de andos de picos, hablar de 
+"los picos más anchos" queda a interpretación.
+
+Una primer solución, puede ser elegir el 90% del total:
+* "Todo lo que esté por encima del 90% los datos, son los picos más anchos"
+
+Idea: Graficar para cada 10, 20, ..., 90%
+
+```{r}
+filter <- 17
+
+cat("Estadística de los", sum(penguins$bill_depth_mm > filter), ":\n")
+print(summary(penguins[penguins$bill_depth_mm > filter, c("bill_length_mm", "bill_depth_mm")]))
+
+ggplot(data = penguins[penguins$bill_depth_mm > filter,], aes(x = bill_depth_mm,
+                                                              y = bill_length_mm,
+                                                              color = species)) +
+  geom_point() +
+  
+  geom_rug() +
+  theme_minimal()
+
+penguins$Color <- ifelse(penguins$bill_depth_mm > filter, "blue", "gray")
+  
+ggplot(data = penguins, aes(x = bill_depth_mm,
+                            y = bill_length_mm,
+                            color = Color)) +
+  geom_point() +
+  scale_color_identity() +
+  geom_rug() +
+  theme_minimal()
+
+ggplot(data = penguins[penguins$bill_depth_mm > filter,], aes(x = species,
+                                                              y = bill_length_mm,
+                                                              fill = species)) +
+  #geom_point() +
+  geom_boxplot() +
+  #geom_rug() +
+  theme_minimal()
+
+
+```
+
+
+#### Ejercicio 3
+
+Hacer un violin plot con `geom_violin` y sumen una capa de `geom_boxplot`
+y `geom_point` o `geom_jitter`
+
+
+```{r}
+ggplot(data = penguins, aes(x = species,
+                            y = bill_length_mm,
+                            color = species)) +
+  #geom_point() +
+  geom_violin() +
+  geom_boxplot(alpha=0.1) +
+  #geom_point() +
+  geom_jitter(alpha=0.5, size=0.5) +
+  geom_rug() +
+  theme_minimal()
+
+```
+
+
+#### Ejercicio 4
+
+Repetir alguno de los gráficos que hicieron con los datos de Properati
+pero esta vez con `ggplot`.
+
+TODO: Probar esto: http://www.r-graph-gallery.com/hexbin-map.html
+
+```{r}
+
+```
+
+

@@ -1,0 +1,199 @@
+---
+title: "TP1 - Vuelos"
+author: "Grupo N"
+date: "10/14/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+require(tidyverse)
+require(geosphere)
+require(rvest)
+require(dplyr)
+```
+
+```{r}
+#datos <- read.csv('aterrizajes-y-despegues-registrados-por-eana-2020.csv', sep=";", header=T)
+datos <- read.csv('202109-informe-ministerio.csv', sep=";", header=T)
+
+# De factor a caracter
+datos <- datos %>%
+  mutate(across(everything(), as.character)) 
+
+datos
+```
+
+```{r}
+datos %>%
+  filter(Aeronave != 0) %>%
+  arrange(Aeronave, Hora.UTC)
+```
+
+# 
+
+Agreguen nuevas variables con la **ciudad, provincia y coordenadas** que corresponde a cada aeropuerto. Pueden encontrar esta información en este artículo de Wikipedia
+
+
+
+
+```{r}
+  pag_wiki = read_html("https://en.wikipedia.org/wiki/List_of_airports_in_Argentina")
+  elem_tabla = html_element(pag_wiki, ".wikitable")
+  aeropuertos = html_table(elem_tabla)
+  aeropuertos
+```
+
+```{r}
+
+```
+
+Nos interesa la columna `ICAO`: [*International Civil Aviation Organization*](https://en.wikipedia.org/wiki/International_Civil_Aviation_Organization), que en castellano tiene siglas en orden inverso: 
+OACI: [Organización de Aviación Civil Internacional](https://es.wikipedia.org/wiki/Organizaci%C3%B3n_de_Aviaci%C3%B3n_Civil_Internacional)
+
+Revisamos tabla de códigos manualmente en busca de valores inválidos.
+
+```{r}
+unique(aeropuertos$ICAO)
+```
+Efectivamente, aparecen el valor vacío, y el código `SANR` seguido de un `[1]` característico de Wikipedia como link a una cita.
+
+```{r}
+aeropuertos <- aeropuertos %>% 
+ filter(ICAO != "", ICAO != "SANR[1]")
+unique(aeropuertos$ICAO)
+```
+Hago lo mismo para los datos de vuelos
+```{r}
+unique(datos$Aeropuerto)
+```
+```{r}
+datos <- datos %>% 
+  # Filtro valores inválidos
+  filter(Origen...Destino != "", Origen...Destino != "N/A ")
+  
+unique(datos$Origen...Destino)
+```
+Nos gustaría ver qué valores se comparten entre las dos tablas y cuáles no
+
+```{r}
+intersec <- merge(datos, aeropuertos, by.x = "Aeropuerto", by.y= "ICAO")
+unique(intersec$Aeropuerto)
+```
+
+reviso que todos los que esten en la intersección, estén en los datos, y veo quienes quedaron afuera de la tabla de wikipedia
+
+
+```{r}
+# Cambio el nombre para usar inner_join
+#datos <- datos %>% rename(OACI=Origen.OACI)
+#datos <- datos %>% rename(Origen.OACI=OACI)
+```
+```{r}
+d <- datos %>% inner_join(aeropuertos, by = c( "Origen...Destino" = "ICAO" ))
+unique(d$Origen...Destino)
+d
+```
+Los que quedan afuera 
+
+```{r}
+fuera.datos <- datos %>% filter( ! (Origen.OACI %in% unique(d$Origen.OACI)) )
+fuera.aerop <- aeropuertos %>% filter( ! (ICAO %in% unique(d$Origen.OACI)) )
+
+cat("Sacados de datos, pues no están en wiki:\n")
+unique(fuera.datos$Origen.OACI)
+
+cat("\nSacados de aeropuertos (wiki), pues no están en datos:\n")
+unique(fuera.aerop$ICAO)
+
+fuera.datos
+fuera.aerop
+```
+`datos.limpios` es una variable en la que vamos a filtrar los vuelos de cabotaje, para trabajar **solo** con los aeropuertos nacionales.
+
+En `datos.eliminados` guardamos el resto de los vuelos que no vamos a usar para visualizarlos.
+
+```{r}
+datos.limpios <- datos %>% filter( Origen.OACI %in% aeropuertos$ICAO & Destino.OACI %in% aeropuertos$ICAO )
+datos.eliminados <- datos %>% filter( !(Origen.OACI %in% aeropuertos$ICAO & Destino.OACI %in% aeropuertos$ICAO) )
+
+datos.limpios
+
+datos.eliminados
+```
+# `VERIFICAR CUANDO TENGAMOS TODOS LOS DATOS!!!!`
+
+Observamos que la cantidad de datos nacionales es mayor a la cantidad de internacionales
+
+```{r}
+# Nos quedamos y traducimos columnas relevantes
+aerop.limpios <- aeropuertos %>%
+  select(Ciudad = `City served`,
+         Provincia = Province,
+         Coordenadas = Coordinates, OACI=ICAO) %>% 
+  mutate(Ciudad = gsub("metropolitan area", "área metropolitana", Ciudad))
+
+# Extraemos coordenadas en formato adecuado para usar con librería geosphere
+aerop.limpios <- aerop.limpios %>%
+  mutate(Coordenadas = str_extract(Coordenadas, "-[:digit:]+.[:digit:]+; -[:digit:]+.[:digit:]+"))
+
+aerop.limpios <- aerop.limpios %>%
+  separate(col=Coordenadas, into=c("Coords.lat", "Coords.long"), sep="; ", convert=T)
+```
+
+
+```{r}
+datos.limpios.origen <- datos.limpios %>%
+  left_join(aerop.limpios, by = c( "Origen.OACI" = "OACI" )) %>% 
+  select(everything(), Ciudad.origen = Ciudad, Provincia.origen = Provincia, Coordenadas.origen.lat = Coords.lat, Coordenadas.origen.long = Coords.long)
+
+datos.limpios.destino <- datos.limpios %>%
+  left_join(aerop.limpios, by = c( "Destino.OACI" = "OACI" )) %>% 
+  select(everything(), Ciudad.destino = Ciudad, Provincia.destino = Provincia, Coordenadas.destino.lat = Coords.lat, Coordenadas.destino.long = Coords.long)
+
+datos.limpios.ambos <- datos.limpios.origen %>%
+  mutate(Ciudad.destino = datos.limpios.destino$Ciudad,
+         Provincia.destino = datos.limpios.destino$Provincia,
+         Coordenadas.destino.lat = datos.limpios.destino$Coordenadas.destino.lat,
+         Coordenadas.destino.long = datos.limpios.destino$Coordenadas.destino.long)
+
+datos.limpios.ambos
+```
+
+
+
+
+
+
+
+
+```{r}
+#install.packages("geosphere")
+
+?distHaversine
+
+distHaversine(p1=c(-30.99028, -64.24417), p2=c(-30.99028, -64.24417))
+distHaversine(p1=c(-30.99028, -64.24417), p2=c(-30.99028, -65.24417))
+```
+```{r}
+datos.limpios.ambos <- datos.limpios.ambos %>%
+  rowwise() %>% 
+  mutate(Distancia.recorrida = distHaversine(p1=c(Coordenadas.origen.lat, Coordenadas.origen.long),
+                                             p2=c(Coordenadas.destino.lat, Coordenadas.destino.long)))
+
+datos.limpios.ambos
+```
+

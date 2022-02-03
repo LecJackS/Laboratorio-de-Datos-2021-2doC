@@ -1,0 +1,143 @@
+---
+title: "Analisis exploratorio de los precios por metro cuadrdo de departamentos en CABA, con la base de Properati"
+author: "Andres Farall"
+date: "18 de Agosto de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: Laboratorio de Datos
+---
+
+## 1) **Adquisición de los datos** (I)
+### a) Lectura del dataset y su estructura
+
+```{r}
+# leo el archivo ar_properties 
+library(readr)
+datos1a <- read_csv("ar_properties.csv") # Acá completen con su propio PATH al archivo
+datos1a
+names(datos1a)
+```
+
+### b) Aplicando filtros
+
+Se seleccionan aquellos registros que pertenecen a Argentina y Capital Federal, cuyo precio esta en dolares (USD), el tipo de propiedad corresponde a Departamento y el tipo de operacion sea Venta. 
+
+```{r}
+# filtros
+filtro.pais<-is.element(datos1a$l1,"Argentina")
+filtro.region<-is.element(datos1a$l2,"Capital Federal")
+filtro.moneda<-is.element(datos1a$currency,"USD")
+filtro.prop<-is.element(datos1a$property_type,"Departamento")
+filtro.oper<-is.element(datos1a$operation_type,"Venta")
+filtro.lat<-!is.na(datos1a$lat) # sin datos faltantes
+filtro.lon<-!is.na(datos1a$lon) # sin datos faltantes
+filtro.price<-!is.na(datos1a$price) # sin datos faltantes
+filtro.sup<-!is.na(datos1a$surface_covered) # sin datos faltantes
+filtro.barrio<-!is.na(datos1a$l3) # sin datos faltantes
+
+# condicion multiple
+quedan<-(filtro.pais&filtro.region&filtro.moneda&filtro.prop&filtro.oper&filtro.lat&filtro.lon&filtro.price&filtro.sup&filtro.barrio) # vector logico con TRUEs en los registros seleccionados
+# nueva base, con solo 5 variables: lat,lon,barrio, precio y superficie
+datos1b <- datos1a[quedan,c(6,7,10,18,19)] # nueva base
+datos1b
+# definicion de variables para trabajar
+lat<-datos1b$lat
+lon<-datos1b$lon
+barrio<-datos1b$l3
+sup<-datos1b$surface_covered
+precio<-datos1b$price
+pm2<-precio/sup # nueva variable de interes
+# descripcion de la variable pm2
+summary(pm2) 
+hist(pm2)
+hist(pm2[pm2<8000],50)
+```
+
+
+#### ¿ Como cambia el pm2 en CABA por barrios ?
+
+```{r}
+uni.barrio<-unique(barrio) # conjunto de barrios de CABA
+cant.colores<-length(uni.barrio) # cantidad total de barrios
+set.seed(3) # fijo la semilla
+colores<-sample(rainbow(cant.colores)) # mezclo los 57 cols para barrios ordenaods alfabeticamente
+col.depto<-colores[match(barrio,sort(uni.barrio))] # asigno cols a los deptos
+# boxplot
+par(cex.axis=0.6)
+boxplot(pm2~barrio,outline=FALSE,las=2,col=colores,xlab="",horizontal=FALSE)
+# deptos en el espacio
+par(pty="s")
+plot(lon,lat,cex=0.2,pch=16,col=col.depto)
+```
+
+#### ¿ Cual es el punto geográfico con departamentos con mayor precio por metro cuadrado en CABA ?
+
+Opcion 1: Dado un radio (en metros u otra unidad geográfica), para cada depto (lon,lat) tomo los deptos que caen en ese radio y calculo el precio mediano por $m^2$.
+#Opcion 2: Dada una cantidad de vecinos $N$, para cada depto (lon,lat) tomo los $N$ deptos más cercanos y calculo el precio mediano por $m^2$.
+Opcion 3: pesar por distancia
+
+vamos con Opcion 2
+
+
+```{r}
+radio.vecinos<-1000 # cant de vecinos
+N<-nrow(datos1b) # cant de deptos
+pm2.med<-rep(NA,N) # vector con los pm2 medianos
+vecinos<-list() # lista vacia para guardar los vecinos mas cercanos a cada depto
+length(vecinos)<-N # un elemento de lista para cada depto
+for (i in 1:N) # recorro los deptos
+{
+  lalon<-lon[i] # fijo la lat
+  lalat<-lat[i] # fijo la lon
+  distancias<-sqrt((lon-lalon)^2+(lat-lalat)^2) # vector de dist. a (lalon,lalat)
+  cercanos<-order(distancias)[1:radio.vecinos] # ordeno por dist, y me quedo con los cercanos
+  vecinos[[i]]<-cercanos # guardo los indices de los mas cercanos
+  pm2.med[i]<-median(pm2[cercanos]) # calculo el pm2 mediano de los mas cercanos
+}
+# Lo que obtuvimos despues de correr el bucle
+pm2.med[1:3] # los 3 primeros valores
+vecinos[1:3] # los 3 primeros grupos de indices vecinos
+summary(pm2.med)
+lista<-lapply(vecinos,mean)
+lista[1:3]
+summary(unlist(lista))
+```
+
+Resultados
+
+```{r}
+mas.caro<-which.max(pm2.med) # indice del depto de la zona mas cara
+mas.barato<-which.min(pm2.med) # indice del depto de la zona mas barata
+promedio<-order(pm2.med)[(N+1)/2] # indice del depto de la zona prototipica
+# plot de todos los deptos
+par(pty="s")
+plot(lon,lat,cex=0.2,pch=16,col="grey")
+# puntos de la zona ma cara
+points(lon[mas.caro],lat[mas.caro],col="green",pch=3,cex=5)
+points(lon[vecinos[[mas.caro]]],lat[vecinos[[mas.caro]]],col="green",pch=16,cex=0.1)
+# puntos de la zona ma barata
+points(lon[mas.barato],lat[mas.barato],col="red",pch=3,cex=5)
+points(lon[vecinos[[mas.barato]]],lat[vecinos[[mas.barato]]],col="red",pch=16,cex=0.1)
+# puntos de la zona prototipico
+points(lon[promedio],lat[promedio],col="blue",pch=3,cex=5)
+points(lon[vecinos[[promedio]]],lat[vecinos[[promedio]]],col="blue",pch=16,cex=0.1)
+# los barrios de cada zona
+rev(sort(table(barrio[vecinos[[mas.barato]]])))[1:3]
+rev(sort(table(barrio[vecinos[[promedio]]])))[1:3]
+rev(sort(table(barrio[vecinos[[mas.caro]]])))[1:3]
+# boxplots comparativos de las 3 zonas
+boxplot(pm2[vecinos[[mas.barato]]],pm2[vecinos[[promedio]]],pm2[vecinos[[mas.caro]]],outline = FALSE,col=c("red","blue","green"))
+```
+
+### Algunas reflexiones
+
+zonas del espacio cercanas tienen comportamientos similares
+fijar la cantidad de vecinos genera ventanas adaptativas
+mas vecinos brinda resultados mas moderados
+menos vecinos brinda resultados mas extremos 

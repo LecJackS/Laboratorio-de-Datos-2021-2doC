@@ -1,0 +1,615 @@
+---
+title: "Modelado de Precios con la base de Properati"
+author: "Andres Farall"
+date: "29 de Septiembre de 2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: Laboratorio de Datos
+editor_options: 
+  chunk_output_type: inline
+---
+
+### Carga de Libreiras, Lectura del dataset y su estructura
+
+```{r}
+#install.packages("knitr")
+# leo el archivo ar_properties 
+library(tidyverse) # entorno tidy
+library(dplyr) # manejo de datos
+library(GGally) # scatterplots multiples
+library(rgl) # para graficos 3D
+datos1a <- read_csv("ar_properties.csv") # Acá completen con su propio PATH al archivo
+datos1a
+```
+
+### Aplicando filtros
+
+```{r}
+datos1d <- datos1a %>% 
+                   # Me quedo con los que pertenecen a Argentina, Capital Federal y Boedo
+            filter(l1 == "Argentina", 
+                   l2 == "Capital Federal",
+                   l3 == "Boedo",
+                   # cuyo precio este en dolares 
+                   currency == "USD", 
+                   # propiedad tipo Casa
+                   property_type %in% c("Casa"),
+                   # operaciones de venta
+                   operation_type == "Venta") %>% 
+            dplyr::select(id, l3, surface_total, surface_covered, price) %>% mutate(Precio=price,Sup=surface_covered,Fondo=surface_total-surface_covered) %>% dplyr::select(Sup,Fondo,Precio) %>%  filter(Fondo>=0) %>% na.omit()
+
+datos1d
+```
+
+### Modelado de Datos
+
+Videos 1 a 10: <https://www.youtube.com/watch?v=oZh0zNwmq_4&list=PLN2e9R_DoC0THQgbage3DkS_7tCsqTd-3&index=1>
+
+```{r}
+# Boedo
+summary(datos1d)
+ggpairs(datos1d)
+# ajuste
+ajusM2 <- lm(Precio ~ Sup + Fondo, data = datos1d) # modelo lineal multiple
+coe <- coef(ajusM2) # coeficientes
+coe
+summary(ajusM2)
+plot3d(ajusM2, size = 15, col = "blue")
+# Defino las variables
+Sup <- datos1d$Sup
+Fondo <- datos1d$Fondo
+Precio <- datos1d$Precio
+```
+
+grafico bueno
+
+```{r}
+predichos2<-fitted.values(ajusM2)
+coefs <- coef(ajusM2)
+a <- coefs["Sup"]
+b <- coefs["Fondo"]
+cc <- -1
+d<- coefs["(Intercept)"]
+
+par3d(windowRect = c(0, 0, 800, 800)) # make the window large
+par3d(zoom = 1.1) # larger values make the image smaller
+#plot3d(datos,col=colores[clases],size=2)
+plot3d(Sup,Fondo,Precio, 
+       type="s", size=1,col="red",pch="16", xlab="Sup", 
+       ylab="Fondo", zlab="Precio")
+planes3d(a, b, cc, d,  col = 'red', alpha = 0.2)
+rgl.snapshot('/home/andresfaral/Dropbox/Labo de Datos/foto1.png')
+plot3d(Sup,Fondo,predichos2, type="s", size=1,
+       col="pink",pch="16",  xlab="Sup", 
+       ylab="Fondo", zlab="Precio",add=T)
+rgl.snapshot('/home/andresfaral/Dropbox/Labo de Datos/foto2.png')
+segments3d(x=as.vector(rbind(Sup,Sup)),y=as.vector(rbind(Fondo,Fondo)),z=as.vector(rbind(Precio,predichos2)),col="darkred")
+rgl.snapshot('/home/andresfaral/Dropbox/Labo de Datos/foto3.png')
+```
+
+### Funcion de Evaluacion
+
+```{r}
+# Perdida cuadratica
+Eval <- function(mu, alfa, beta) {
+  salida <- mean((Precio - mu - alfa * Sup - beta * Fondo) ^ 2)
+  return(t(salida))
+}
+Eval(100000, 2000, 1000)
+```
+
+# TP 1
+
+# 1)
+
+> Convierta el script de optimización aleatoria (Luus-Jaakola) en una función, y aplique esa función para hallar los valores óptimos de parámetros de los modelos M1.
+>
+> Requiere ver hasta el video 7 inclusive (53 minutos).
+
+### Optimizacion Aleatoria
+
+```{r}
+set.seed(42)
+optim.aleatoria <- function(loss.fun=Eval, mu_0=100000, alfa_0=1000, beta_0=1000){
+  facred <- 0.9999   # factor de reduccion de la ventana
+  facred.acu <- 1  # factor de reduccion acumulado
+  toler <- 1e-6 # umbral de tolerancia
+  
+  # Rangos
+  rango.mu <- 50000 # rango inicial de mu
+  rango.alfa <- 500 # rango inicial de alfa
+  rango.beta <- 500 # rango inicial de beta
+  
+  # Parametros iniciales
+  #mu <- 100000 # valor inicial de mu
+  #alfa <- 1000 # valor inicial de alfa
+  #beta <- 1000 # valor inicial de beta
+  
+  # Parametros mejores
+  mejor.mu <- mu_0
+  mejor.alfa <- alfa_0
+  mejor.beta <- beta_0
+  
+  mejor.eval <- loss.fun(mu_0, alfa_0, beta_0) # el mejor valor
+  mejores <- matrix(c(mejor.eval, mu_0, alfa_0, beta_0, 1), 1, 5)
+  k <- 0    # indice de iteracion
+  actu <- 0 # indice de actualizacion
+  
+  # Historiales para graficar luego
+  mu.hist <- c()
+  alfa.hist <- c()
+  beta.hist <- c()
+  
+  while (facred.acu > toler)
+  {
+    k <- k + 1
+    # Genero nuevos valores aleatorios
+    mu <-
+      runif(1,
+            mejor.mu - rango.mu * facred.acu,
+            mejor.mu + rango.mu * facred.acu)
+    alfa <-
+      runif(1,
+            mejor.alfa - rango.alfa * facred.acu,
+            mejor.alfa + rango.alfa * facred.acu)
+    beta <-
+      runif(1,
+            mejor.beta - rango.beta * facred.acu,
+            mejor.beta + rango.beta * facred.acu)
+    
+    # Evaluacion de los nuevos valores
+    valor <- loss.fun(mu, alfa, beta)
+    if (valor < mejor.eval)
+      # Si encuentro algo mejor -> Actualizacion
+    {
+      actu <- actu + 1
+      
+      mejor.eval <- valor
+      mejor.mu <- mu
+      mejor.alfa <- alfa
+      mejor.beta <- beta
+      
+      mu.hist <- c(mu, mu.hist)
+      alfa.hist <- c(alfa, alfa.hist)
+      beta.hist <- c(beta, beta.hist)
+      
+      mejores <- rbind(mejores, c(mejor.eval, mu, alfa, beta, k))
+    }
+    else
+      # Si NO encuentro algo mejor -> Reduzco rango de busqueda
+    {
+      facred.acu <- facred.acu * facred
+    }
+  }
+  all.hist <- data.frame(mejor.eval, mu.hist, alfa.hist, beta.hist)
+  return (list(mejores, all.hist))
+}
+
+# mejores == c(mejor.eval, mu, alfa, beta, iteracion_k)
+resultado <- optim.aleatoria(loss.fun = Eval)
+mejores <- resultado[[1]]
+historial <- resultado[[2]]
+head(mejores)
+```
+
+```{r}
+mu.hist <- historial[, 2]
+alfa.hist <- historial[, 3]
+beta.hist <- historial[, 4]
+
+for(i in 1:dim(mejores)[1]){
+  #cat("iter:",i,"\n")
+  mejor.eval <- mejores[i, 1]
+  mejor.mu <- mejores[i, 2]
+  mejor.alfa <- mejores[i, 3]
+  mejor.beta <- mejores[i, 4]
+  
+
+  k <- historial[i, 5]
+  
+  actu <- k # TODO: Recheck this
+  
+  plot(
+    mejor.alfa,
+    mejor.beta,
+    xlim = c(0, 2000),
+    ylim = c(0, 2000),
+    type = "n",
+    xlab = "alfa",
+    ylab = "beta",
+    main = paste(i, 
+      "Act:",
+      actu,
+      "Mejor alfa=",
+      round(mejor.alfa, 2),
+      "Mejor beta=",
+      round(mejor.beta, 2)
+    )
+  )
+  points(mejor.alfa,
+         mejor.beta,
+         cex = 10,
+         col = "red",
+         pch = 3)
+  
+  points(alfa.hist, beta.hist, cex=0.1,col="blue")
+  points(mejores[,3], mejores[,4], type='l')
+
+}
+
+```
+
+# Graficacion
+
+```{r}
+plot((mejores[,1]),type="l",col="blue",xlab="Actualizacion",ylab="Valor de Perdida")
+#lines(evol2[subconj,2],col="green")
+abline(coe[1],0,lty=3)
+title("Convergencia de la Perdida")
+#
+plot(mejores[,2],type="l",col="blue",xlab="Actualizacion",ylab="Valor de mu")
+#lines(evol2[subconj,2],col="green")
+abline(coe[1],0,lty=3)
+title("Convergencia del Parametro mu")
+#
+#
+plot(mejores[,3],type="l",col="blue",xlab="Actualizacion",ylab="Valor de alfa")
+#lines(evol2[subconj,3],col="green")
+abline(coe[2],0,lty=3)
+title("Convergencia del Parametro alfa")
+#
+#
+plot(mejores[,4],type="l",col="blue",xlab="Actualizacion",ylab="Valor de beta")
+#lines(evol2[subconj,4],col="green")
+abline(coe[3],0,lty=3)
+title("Convergencia del Parametro beta")
+#
+#
+plot(mejores[,5],type="l",col="blue",xlab="Actualizacion",ylab="Iteraciones")
+#lines(evol2[subconj,4],col="green")
+title("Evolucion de las Iteraciones")
+#
+
+```
+
+### ¿ Cuanbueno es el ajuste ?
+
+```{r}
+predichos <- predict(ajusM2)
+mean(abs(Precio - predichos))
+pmaeM2 <- mean(abs(Precio - predichos)) / mean(Precio)
+pmaeM2
+```
+
+### Medida del error por Validacion Cruzada
+
+```{r}
+n<-length(Precio)
+predichos.oos <- rep(NA, n) # predichos out of sample
+plot3d(ajusM2, size = 15, col = "blue")
+invisible(readline(prompt = "Presione [enter] para seguir:"))
+for (i in 1:n)
+{
+  ajus.cv <- lm(Precio ~ Sup + Fondo, data = datos1d[-i, ])
+  predichos.oos[i] <- predict(ajus.cv, newdata = datos1d[i, ])
+  plot3d(
+    ajus.cv,
+    size = 15,
+    col = "green",
+    add = T,
+    alpha = 0.1
+  )
+}
+# MAE
+mean(abs(Precio - predichos.oos))
+# PMAE
+pmaeM2.cv <- mean(abs(Precio - predichos.oos)) / mean(Precio)
+pmaeM2.cv
+```
+
+# Segunda parte
+
+A partir de video 11
+
+### ¿ Cuán certeras (creibles/estables/repetibles) son las relaciones halladas ? El Bootstrap
+
+```{r}
+B <- 1000 # cantidad de muestras bootstrap
+mues <- rep(NA, B) # vector para guardar los mu estimados
+alfas <- rep(NA, B) # vector para guardar los alfa estimados
+betas <- rep(NA, B) # vector para guardar los beta estimados
+R2s <- rep(NA, B)
+set.seed(1)
+for (b in 1:B)
+{
+    indices <- sample(1:68, 68, replace = TRUE)
+    ajus.boot <- lm(Precio ~ Sup + Fondo, data = datos1d[indices, ])
+    coe <- coef(ajus.boot)
+    mues[b] <- coe[1]
+    alfas[b] <- coe[2]
+    betas[b] <- coe[3]
+    R2s[b] <- summary(ajus.boot)[[9]]
+}
+resul <- cbind(mues, alfas, betas, R2s)
+head(resul)
+```
+
+Grafico de resultados
+
+```{r}
+plot(alfas, betas)
+# parametros estimados en el modelo inicial
+segments(863, 0, 863, 2000, col = "green", lty = 1,
+    lwd = 3)
+
+segments(0, 591, 2000, 591, col = "green", lty = 1,
+    lwd = 3)
+# cuantiles bootstrap
+segments(quantile(alfas, 0.05), 0, quantile(alfas,
+    0.05), 2000, col = "red", lty = 3, lwd = 3)
+segments(quantile(alfas, 0.5), 0, quantile(alfas, 0.5),
+    2000, col = "red", lty = 3, lwd = 3)
+segments(quantile(alfas, 0.95), 0, quantile(alfas,
+    0.95), 2000, col = "red", lty = 3, lwd = 3)
+segments(0, quantile(betas, 0.05), 2000, quantile(betas,
+    0.05), 2000, col = "red", lty = 3, lwd = 3)
+segments(0, quantile(betas, 0.5), 2000, quantile(betas,
+    0.5), 2000, col = "red", lty = 3, lwd = 3)
+segments(0, quantile(betas, 0.95), 2000, quantile(betas,
+    0.95), 2000, col = "red", lty = 3, lwd = 3)
+
+abline(0, 1, col = "blue")
+
+title("Estimaciones Bootstrap de los Parametros")
+
+mean(betas > alfas)
+```
+
+```{r}
+plot3d(alfas, betas, R2s)
+hist(R2s)
+
+```
+
+### Modelo simple con Sup
+
+```{r}
+ajusM1<-lm(Precio~Sup,data=datos1d)
+coe<-coef(ajusM1)
+coe
+summary(ajusM1)
+plot(ajusM1)
+plot(Sup,Precio)
+abline(ajusM1)
+title("Regresion Lineal Simple Precio Vs. Sup")
+```
+
+### ¿ Cuan bueno es el ajuste ?
+
+```{r}
+predichos <- predict(ajusM1)
+mean(abs(Precio - predichos))
+pmaeM1 <- mean(abs(Precio - predichos)) / mean(Precio)
+pmaeM1
+# cv
+n <- length(Precio)
+predichos.oos <- rep(NA, n) # predichos out of sample
+for (i in 1:n)
+{
+    ajus.cv <- lm(Precio ~ Sup, data = datos1d[-i, ])
+    predichos.oos[i] <- predict(ajus.cv, newdata = datos1d[i, ])
+}
+mean(abs(Precio - predichos.oos))
+pmaeM1.cv <- mean(abs(Precio - predichos.oos)) / mean(Precio)
+pmaeM1.cv
+```
+
+### Modelo mas complejo
+
+```{r}
+# agrego lat y lon
+datos1e <- datos1a %>% 
+                   # Me quedo con los que pertenecen a Argentina, Capital Federal y Boedo
+            filter(l1 == "Argentina", 
+                   l2 == "Capital Federal",
+                   l3=="Boedo",
+                   # cuyo precio este en dolares 
+                   currency == "USD", 
+                   # propiedad tipo Casa
+                   property_type %in% c("Casa"),
+                   # operaciones de venta
+                   operation_type == "Venta") %>% 
+            dplyr::select(id, l3, surface_total, surface_covered, price,lat,lon) %>% mutate(Precio=price,Sup=surface_covered,Fondo=surface_total-surface_covered) %>% dplyr::select(Sup,Fondo,Precio,lat,lon) %>%  filter(Fondo>=0) %>% na.omit()
+datos1e
+summary(datos1e)
+ggpairs(datos1e)
+# Creo las nuevas variables
+Lon<-datos1e$lon
+Lat<-datos1e$lat
+ajusM4<-lm(Precio~Sup+Fondo+Lon+Lat)
+coe<-coef(ajusM4)
+coe
+summary(ajusM4)
+plot(Lon,Lat)
+predichos<-predict(ajusM4)
+mean(abs(Precio-predichos))
+pmaeM4<-mean(abs(Precio-predichos))/mean(Precio)
+pmaeM4
+plot(Precio,predichos,xlab="Precios Observados",yla="Predichos por M4",main="Precios Predichos por M4 Vs. Observados")
+abline(0,1,col="green")
+```
+
+### Error por CV del modelo M4
+
+```{r}
+n<-length(Precio)
+predichos.oos<-rep(NA,n) # predichos out of sample
+for (i in 1:n)
+{
+  ajus.cv<-lm(Precio~Sup+Fondo+lon+lat,data=datos1e[-i,])
+  predichos.oos[i]<-predict(ajus.cv,newdata=datos1e[i,])
+}
+mean(abs(Precio-predichos.oos))
+pmaeM4.cv<-mean(abs(Precio-predichos.oos))/mean(Precio)
+pmaeM4.cv
+```
+
+### Vamos por mas .... Modelo mas mas complejo
+
+agrego efectos cuadraticos a lat y lon
+
+```{r}
+# agrego efectos no lineales
+ajusM8<-lm(Precio~Sup+Fondo+poly(Lon,3)+poly(Lat,3))
+coe<-coef(ajusM8)
+coe
+summary(ajusM8)
+plot(Lon,Lat)
+predichos<-predict(ajusM8)
+mean(abs(Precio-predichos))
+pmaeM8<-mean(abs(Precio-predichos))/mean(Precio)
+pmaeM8
+plot(Precio,predichos,xlab="Precios Observados",yla="Predichos por M8",main="Precios Predichos por M8 Vs. Observados")
+abline(0,1,col="green")
+```
+
+### Medida del error por Validacion Cruzada
+
+```{r}
+n<-length(Precio)
+predichos.oos<-rep(NA,n) # predichos out of sample
+for (i in 1:n)
+{
+  ajus.cv<-lm(Precio~Sup+Fondo+poly(lon,3)+poly(lat,3),data=datos1e[-i,])
+  predichos.oos[i]<-predict(ajus.cv,newdata=datos1e[i,])
+}
+mean(abs(Precio-predichos.oos))
+pmaeM8.cv<-mean(abs(Precio-predichos.oos))/mean(Precio)
+pmaeM8.cv
+```
+
+### Comparacion de Modelos
+
+```{r}
+PMAES<-matrix(c(pmaeM1,pmaeM1.cv,pmaeM2,pmaeM2.cv,pmaeM4,pmaeM4.cv,pmaeM8,pmaeM8.cv),4,2,byrow = T)
+PMAES
+matplot(PMAES,type="b",pch=16,col=2:3,lty=1,lwd=3,, xaxt='n',main="PMAEs Ingenuos y PMAEs CV para M!, M2, M4 y M8",ylim=c(0.13,0.25),xlab="Modelo",ylab="PMAE")
+text(1,pmaeM1.cv+0.01,"M1")
+text(2,pmaeM2.cv+0.01,"M2")
+text(3,pmaeM4.cv+0.01,"M4")
+text(4,pmaeM8.cv+0.01,"M8")
+```
+
+### Trade-off Sesgo-Varianza
+
+```{r}
+N<-68
+Sup0<-250
+Relacion<-function(x){(log((x-70)/520)-log(10/520))*100000+100000}
+set.seed(1)
+Sup<-runif(N)*520+80
+Error<-rnorm(N)*50000
+Precio<-Relacion(Sup)+Error
+plot(Sup,Precio,col="blue",main="Precio Vs. Superficie")
+curve(Relacion,from=80,to=600,add=TRUE,col="green",lwd=2)
+Precio0<-Relacion(Sup0)
+segments(Sup0,0,Sup0,Precio0,lty=3,col="green",lwd=2)
+segments(0,Precio0,Sup0,Precio0,lty=3,col="green",lwd=2)
+```
+
+### Estimaciones simples
+
+```{r}
+set.seed(1)
+Sup<-runif(N)*520+80
+Error<-rnorm(N)*50000
+Precio<-Relacion(Sup)+Error
+cant<-50 # cantidad de estimaciones
+estimaciones<-rep(NA,cant)
+grilla<-data.frame(Sup=seq(80,600,length.out = 100))
+# grafico fijo
+plot(Sup,Precio,col="blue",main="Precio Vs. Superficie con Ajustes de Modelos Simples")
+
+# bucle
+for (i in 1:cant)
+{
+Sup<-runif(N)*520+80
+Error<-rnorm(N)*50000
+Precio<-Relacion(Sup)+Error
+ajus.1<-lm(Precio~poly(Sup,1))
+pred.1<-predict(ajus.1,newdata=data.frame(Sup=Sup0))
+estimaciones[i]<-pred.1
+curva.1<-predict(ajus.1,newdata = grilla)
+lines(as.numeric(grilla$Sup),curva.1,lwd=0.5,col="red")
+}
+segments(0,mean(estimaciones),Sup0,mean(estimaciones),lty=3,lwd=2,col="black")
+segments(0,mean(estimaciones)-2*sd(estimaciones),Sup0,mean(estimaciones)-2*sd(estimaciones),lty=3,lwd=2,col="black")
+segments(0,mean(estimaciones)+2*sd(estimaciones),Sup0,mean(estimaciones)+2*sd(estimaciones),lty=3,lwd=2,col="black")
+#
+curve(Relacion,from=80,to=600,add=TRUE,col="green",lwd=3)
+segments(Sup0,0,Sup0,Precio0,lty=3,lwd=2,col="green")
+segments(0,Precio0,Sup0,Precio0,lty=3,lwd=2,col="green")
+estimaciones.simples<-estimaciones
+```
+
+### Estimaciones complejas
+
+```{r}
+set.seed(1)
+Sup<-runif(N)*520+80
+Error<-rnorm(N)*50000
+Precio<-Relacion(Sup)+Error
+cant<-50 # cantidad de estimaciones
+estimaciones<-rep(NA,cant)
+grilla<-data.frame(Sup=seq(80,600,length.out = 100))
+# grafico fijo
+plot(Sup,Precio,col="blue",main="Precio Vs. Superficie con Ajustes de Modelos Complejos")
+
+# bucle
+for (i in 1:cant)
+{
+Sup<-runif(N)*520+80
+Error<-rnorm(N)*50000
+Precio<-Relacion(Sup)+Error
+ajus.1<-lm(Precio~poly(Sup,12))
+pred.1<-predict(ajus.1,newdata=data.frame(Sup=Sup0))
+estimaciones[i]<-pred.1
+curva.1<-predict(ajus.1,newdata = grilla)
+lines(as.numeric(grilla$Sup),curva.1,lwd=0.5,col="red")
+}
+segments(0,mean(estimaciones),Sup0,mean(estimaciones),lty=3,lwd=2,col="black")
+segments(0,mean(estimaciones)-2*sd(estimaciones),Sup0,mean(estimaciones)-2*sd(estimaciones),lty=3,lwd=2,col="black")
+segments(0,mean(estimaciones)+2*sd(estimaciones),Sup0,mean(estimaciones)+2*sd(estimaciones),lty=3,lwd=2,col="black")#
+curve(Relacion,from=80,to=600,add=TRUE,col="green",lwd=3)
+segments(Sup0,0,Sup0,Precio0,lty=3,lwd=2,col="green")
+segments(0,Precio0,Sup0,Precio0,lty=3,lwd=2,col="green")
+estimaciones.complejas<-estimaciones
+```
+
+Comparacion
+
+```{r}
+  boxplot(list(Simple=estimaciones.simples,Complejo=estimaciones.complejas),ylab="Precio",main="Distribucion de las Predicciones",col=c("cyan","magenta"))
+abline(Precio0,0,col="green",lty=3,lwd=2)
+```
+
+Comparacion modelo M1 con M2
+
+```{r}
+ajus.Fondo<-lm(Fondo~Sup,data=datos1d)
+coe.Fondo<-coef(ajus.Fondo)
+coe.M1<-coef(ajusM1)
+coe.M2<-coef(ajusM2)
+# pendiente
+coe.M2[2]+coe.M2[3]*coe.Fondo[2]
+# intercept
+coe.M2[1]+coe.M2[3]*coe.Fondo[1]
+# el ajuste M1
+coe.M1
+```

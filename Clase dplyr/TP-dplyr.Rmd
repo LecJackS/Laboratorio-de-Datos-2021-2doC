@@ -1,0 +1,313 @@
+---
+title: "Transformando datos con dplyr"
+author: "Guillermo Solovey"
+date: "9/27/2021"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+subtitle: "Laboratorio de Datos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Conociendo dplyr
+
+Vamos a trabajar con los datos de las características físicas de pinguinos que están en el 
+paquete `palmerpenguins`. El paquete  se puede instalar con 
+`install.packages("palmerpenguins")`. Toda la documentación sobre estos datos está
+[acá](https://allisonhorst.github.io/palmerpenguins/). El paquete fue desarrollado por 
+Allison Horst, Alison Hill, Kristen Gorman. En particular, Allison Horst es la responsable
+de los dibujos de los pinguinos y de hacer un gran [tutorial](https://allisonhorst.shinyapps.io/dplyr-learnr/#section-welcome) de dplyr usando este dataset.
+
+El objetivo de estos ejercicios es familiarizarse con las siguientes funciones de `dplyr`:
+
+* `filter()`: quedarse con las filas que satisfacen ciertas condiciones.
+* `select()`: quedarse o excluir algunas columnas del dataset.
+* `relocate`()`: mover columnas de lugar.
+* `rename`()`: renombrar columnas. 
+* `mutate()`: crear una nueva variable (columna) operando con las demás.
+* `group_by()` + `summarize()`: obtener medidas resumen de los datos por grupos.
+* `across()`: aplicar una función a varias columnas.
+* `count()`: contar rápidamente cuántas observaciones hay por grupo.
+* `case_when()`: una forma de hacer "if-else".
+ 
+
+Pueden cargar la librería `tidyverse` completa (`library(tidyverse)`) pero por ahora sólo 
+vamos a usar funciones del paquete `dplyr`.
+
+```{r message=FALSE}
+require(palmerpenguins)
+require(dplyr)
+```
+
+
+##### 1
+Usar `filter()` para crear un subconjunto de datos que contenga sólo pinguinos
+de la isla Biscoe y que tengan un pico de 48 mm de largo o más.
+
+```{r}
+penguins %>%
+  filter(island == "Biscoe") %>%
+  filter(bill_length_mm >= 48)
+```
+
+
+##### 2
+Crear otro dataset con la información de pinguinos Adelie machos que no hayan
+sido vistos en el año 2008.
+
+```{r}
+penguins %>%
+  filter(species=="Adelie") %>%
+  filter(sex=="male") %>%
+  filter(year!=2008)
+```
+
+
+##### 3
+Del dataset `penguins` quedarse con todas las variables excepto `year`, `sex` y 
+`body_mass_g`. 
+
+```{r}
+penguins %>%
+  select(!c(year, sex, body_mass_g))
+```
+
+
+##### 4
+Crear un subconjunto de los datos de `penguins` sólo con las obsevaciones de 
+pinguinos machos con aletas de más de 200 mm de largo y quedarse con todas las
+columnas que terminan con "mm". (usar la función `ends_with()`).
+
+```{r}
+penguins %>%
+  filter(sex=="male") %>%
+  filter(flipper_length_mm > 200) %>%
+  select(ends_with("mm"))
+```
+
+
+##### 5
+Empezando con `penguins`, hacer un `pipe` (`%>%`) que:
+
+* se quede sólo con las observaciones de la isla Dream.
+* se quede con las variables `species` y todas las que empiece con `bill`. 
+
+```{r}
+penguins %>%
+  filter(island=="Dream") %>%
+  select(species, starts_with("bill"))
+```
+
+
+##### 6
+Mover todas las variables `factor` después de las columnas `integer`.
+Se puede usar `relocate()` junto con `is.integer` y `is.factor`.
+
+```{r}
+penguins %>% relocate(where(is.factor), .after=where(is.integer))
+```
+
+
+##### 7
+Mover todas las variables `factor` después de las columnas `integer`.
+Se puede usar `relocate()` junto con `is.integer` y `is.factor`.
+
+```{r}
+cat("repetida :)")
+```
+
+##### 8
+Convertir todas las variables que empiezan con `bill` a mayúsculas.
+```{r eval=FALSE}
+penguins %>%
+  rename_with(.fn=toupper, .cols=starts_with("bill"))
+```
+
+##### 9
+Convertir todas las variables que empiezan con `bill` a mayúsculas.
+```{r eval=FALSE}
+cat("repetida :)")
+```
+
+##### 10
+Empezando con `penguins` hacer lo siguiente con un único llamado a la función
+`mutate()`:
+
+* Convertir la variable `species` a `character`.
+* Crear una nueva variable que tenga el peso en Kg.
+* Convertir la variable `island` a minúscula.
+
+```{r}
+penguins %>%
+  mutate(species = as.character(species)) %>%
+  mutate(body_mass_kg=body_mass_g/1000) %>%
+  mutate(island = tolower(island))
+```
+
+
+##### 11
+Empezando con `penguins` crear una tabla resumen que contenga el 
+largo mínimo y máximo de las aletas de los pinguinos chinstrap, agrupados
+por isla. 
+
+```{r}
+penguins %>%
+  filter(species=="Chinstrap") %>%
+  group_by(island) %>%
+  summarise(aleta_max=max(flipper_length_mm), aleta_min=min(flipper_length_mm))
+
+#cat("Notar que estan todos en la misma isla")
+```
+
+
+##### 12
+Empezando con `penguins`, agrupar los datos por especie y año, luego crear una tabla 
+de resumen que contenga el ancho del pico (llamarla `bill_depth_mean`) y el largo 
+del pico (llamarla `bill_length_mean`) para cada grupo
+
+```{r, eval=FALSE}
+penguins %>%
+  group_by(species, year) %>%
+  summarize(
+    bill_depth_mean = mean(bill_depth_mm, na.rm = TRUE),
+    bill_length_mean = mean(bill_length_mm, na.rm = TRUE)
+  )
+```
+
+
+##### 13
+Empezando con `penguins`, hacer una secuencia de operaciones ` %>%` que:
+
+* Agregue una nueva columna llamada `bill_ratio` que sea el cociente entre el largo y el 
+ancho del pico.
+* Quedarse sólo con las columnas `species` y `bill_ratio`.
+* Agrupar los datos por especie.
+* Crear una tabla de resumen que contenga el promedio de la variable `bill_ratio` por especie
+y que el nombre de la columna en la tabla sea `bill_ratio_mean`)
+
+```{r, eval=FALSE}
+penguins %>%
+  mutate(bill_ratio = bill_length_mm / bill_depth_mm) %>%
+  select(species, bill_ratio) %>%
+  group_by(species) %>%
+  summarize(bill_ratio_mean = mean(bill_ratio, na.rm = TRUE))
+```
+
+
+##### 14
+Empezando con `penguins`, agrupar los datos por isla y después usar `across()` para encontrar
+la mediana de los grupos para todas las columnas que contengan el string "mm". El nombre 
+de las variables tiene que ser el nombre original seguido de un guión bajo y la palabra 
+"median" (o sea, `nombredelacolumna_median`)
+```{r, eval=FALSE}
+penguins %>%
+  group_by(island) %>%
+  summarize(across(contains("mm"),
+                   median,
+                   na.rm = TRUE,
+                   .names = "{.col}_median")
+            )
+```
+
+
+##### 15
+Empezando con `penguins`, quedarse con las observaciones correspondientes a los pinguinos
+Adelie y luego usar `across()` para encontrar el valor máximo de todas las variables 
+numéricas para cada isla.
+```{r, eval=FALSE}
+penguins %>%
+  filter(species == "Adelie") %>%
+  group_by(island) %>%
+  summarize(across(where(is.numeric), max, na.rm = TRUE))
+```
+
+
+##### 16
+Empezando con `penguins`, escribir una secuencia de operaciones ` %>% ` que:
+
+* Excluya a los pinguinos observados en la isla Biscoe.
+* Sólo se quede con las variables que están entre `species` y `body_mass_g` inclusive.
+* Renombrar la variable `species` a `especie_pinguino`.
+* Agrupar los datos por la variable `especie_pinguino`.
+* Encontrar el valor medio de las variables que contienen el string “length”, 
+separando por la especie del pinguino, y llamando a las columnas como las originales
+pero agregando "_mean" al final.
+
+```{r, eval=FALSE}
+penguins %>%
+  filter(island != "Biscoe") %>%
+  select(species:body_mass_g) %>%
+  rename(especie_pinguino = species) %>%
+  group_by(especie_pinguino) %>%
+  summarize(across(contains("length"), mean, na.rm = TRUE, .names = "{.col}_mean"))
+```
+
+
+##### 17
+Empezando con `penguins`, contar cuántas observaciones hay por especie, isla y año.
+
+```{r}
+penguins %>%
+  #group_by(species, island, year) %>% 
+  count(species, island, year, sort=T)
+```
+
+
+##### 18
+Empezando con `penguins`, quedarse sólo con los pinguinos Adelie y gentoo penguins. Luego
+contar cuántos hay por cada especie y sexo.
+
+```{r}
+penguins %>%
+  filter(species == c("Adelie", "Gentoo")) %>% 
+  count(species)
+```
+
+
+##### 19
+Agregar una nueva columna a la base de datos llamada `campaña` que contenga:
+
+* “c1” si el año 2007
+* “c2” si el año 2008
+* “c3” si el año 2009
+
+```{r}
+penguins %>%
+  #mutate(c1 = year==2007, c2 = year==2008, c3 = year==2009)
+  mutate(campaña=case_when(
+     year==2007 ~ "c1",
+     year==2008 ~ "c2",
+     year==2009 ~ "c3"
+  ))
+```
+
+
+##### 20
+Empezando con `penguins` quedarse sólo con las observaciones correspondientes a pinguinos
+chinstrap. Luego, quedarse sólo con las variables `flipper_length_mm` y `body_mass_g`. 
+Agregar una nueva columna llamada `fm_ratio` que contenga el cociente entre el largo de la 
+aleta y el peso del pinguino. Luego agregar otra columna llamada `ratio_bin` que contenga
+la palabra "alto" si `fm_ratio` es mayor o igual que 0.05, "bajo" si el cociente es menor
+que 0.05 y "no hay registro" en cualquier otro caso (como por ejemplo si el cociente es
+un NA)
+
+```{r, eval=FALSE}
+penguins %>%
+  filter(species == "Chinstrap") %>%
+  select(flipper_length_mm, body_mass_g) %>%
+  mutate(fm_ratio = flipper_length_mm / body_mass_g) %>%
+  mutate(ratio_bin = case_when(
+    fm_ratio >= 0.05 ~ "alto",
+    fm_ratio < 0.05 ~ "bajo",
+    TRUE ~ "no hay registro"
+  ))
+```
+
